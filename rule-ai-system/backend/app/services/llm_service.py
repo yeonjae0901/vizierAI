@@ -1,6 +1,7 @@
 import json
-import openai
+import os
 from typing import Dict, Any, List, Optional
+from openai import OpenAI
 from app.config import settings
 
 class LLMService:
@@ -8,8 +9,12 @@ class LLMService:
     
     def __init__(self):
         """Initialize LLM service with API key from settings"""
-        openai.api_key = settings.OPENAI_API_KEY
-        self.model = settings.LLM_MODEL
+        api_key = os.environ.get("OPENAI_API_KEY") or settings.OPENAI_API_KEY
+        print(f"LLM 서비스 초기화 - API 키 존재: {bool(api_key)}, 길이: {len(api_key if api_key else '')}")
+        # 키가 있을 경우에만 클라이언트 초기화
+        self.client = OpenAI(api_key=api_key) if api_key else None
+        self.model = os.environ.get("LLM_MODEL") or settings.LLM_MODEL
+        print(f"사용 모델: {self.model}")
     
     async def call_llm(self, prompt: str, system_message: str = None) -> str:
         """
@@ -22,9 +27,10 @@ class LLMService:
         Returns:
             LLM response as string
         """
-        if not openai.api_key:
-            # Mock mode for development without API key
-            return self._mock_llm_response(prompt)
+        api_key = os.environ.get("OPENAI_API_KEY") or settings.OPENAI_API_KEY
+        if not api_key or not self.client:
+            print("API 키가 없어 기본 오류 응답 사용")
+            return "API 키가 설정되어 있지 않습니다. 환경변수 또는 설정 파일에 API 키를 설정하세요."
         
         messages = []
         if system_message:
@@ -33,17 +39,20 @@ class LLMService:
         messages.append({"role": "user", "content": prompt})
         
         try:
-            response = await openai.ChatCompletion.acreate(
+            print(f"OpenAI API 호출 중... 모델: {self.model}")
+            # API 호출
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                temperature=0.2,  # Low temperature for more deterministic outputs
+                temperature=0.2,
                 max_tokens=2000
             )
-            return response.choices[0].message.content
+            result = response.choices[0].message.content
+            print(f"OpenAI 응답 성공: {result[:50]}...")
+            return result
         except Exception as e:
-            # Fallback to mock in case of API error
-            print(f"LLM API Error: {str(e)}")
-            return self._mock_llm_response(prompt)
+            print(f"LLM API 오류 상세: {str(e)}")
+            return f"API 호출 중 오류가 발생했습니다: {str(e)}"
     
     async def generate_json(self, prompt: str, system_message: str = None) -> Dict[str, Any]:
         """
@@ -71,44 +80,10 @@ class LLMService:
         try:
             return json.loads(json_str)
         except json.JSONDecodeError as e:
-            raise ValueError(f"Failed to parse LLM response as JSON: {str(e)}")
-            
-    def _mock_llm_response(self, prompt: str) -> str:
-        """Mock LLM response for development without API key"""
-        if "rule" in prompt.lower() and "generate" in prompt.lower():
-            return json.dumps({
-                "rule": {
-                    "id": "mock-rule-123",
-                    "name": "Mock Price Discount Rule",
-                    "description": "Apply 10% discount for orders over $100",
-                    "conditions": [
-                        {
-                            "field": "order_total",
-                            "operator": "gt",
-                            "value": 100
-                        }
-                    ],
-                    "actions": [
-                        {
-                            "action_type": "apply_discount",
-                            "parameters": {
-                                "discount_percentage": 10
-                            }
-                        }
-                    ],
-                    "priority": 1,
-                    "enabled": True
-                },
-                "explanation": "This is a mock rule generated for testing purposes."
-            })
-        elif "validate" in prompt.lower():
-            return json.dumps({
-                "validation_result": {
-                    "valid": True,
-                    "issues": [],
-                    "summary": "The rule appears to be valid and well-formed."
-                },
-                "rule_summary": "This rule applies a 10% discount to orders over $100."
-            })
-        else:
-            return "I'm a mock LLM service. Please provide an API key for real responses." 
+            print(f"JSON 파싱 오류: {str(e)}, 응답: {response}")
+            # JSON 파싱 오류 시 기본 에러 응답 생성
+            return {
+                "error": "JSON 파싱 오류",
+                "message": f"LLM 응답을 JSON으로 파싱할 수 없습니다: {str(e)}",
+                "response": response[:200] + "..." if len(response) > 200 else response
+            } 

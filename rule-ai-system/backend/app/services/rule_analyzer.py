@@ -88,10 +88,11 @@ class RuleAnalyzerService:
         prompt = f"""
         Summarize the following rule in natural language:
         
+        Rule ID: {rule.id or "Not specified"}
         Rule name: {rule.name}
         Rule description: {rule.description}
-        Conditions: {rule.conditions}
-        Actions: {rule.actions}
+        Conditions: {', '.join([f"{c.field} {c.operator} {c.value}" for c in rule.conditions])}
+        Actions: {', '.join([f"{a.action_type}: {a.parameters}" for a in rule.actions])}
         Priority: {rule.priority}
         Enabled: {rule.enabled}
         
@@ -103,6 +104,7 @@ class RuleAnalyzerService:
         try:
             response = await self.llm_service.call_llm(prompt, system_message)
             return response
-        except Exception:
+        except Exception as e:
             # Fallback to basic summary if LLM call fails
+            print(f"LLM Summary Error: {str(e)}")
             return f"This rule ({rule.name}) {rule.description} with {len(rule.conditions)} conditions and {len(rule.actions)} actions. Priority: {rule.priority}." 

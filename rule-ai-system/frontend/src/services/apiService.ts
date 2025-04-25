@@ -4,7 +4,9 @@ import type {
   RuleGenerationRequest,
   RuleGenerationResponse,
   RuleValidationRequest,
-  RuleValidationResponse
+  RuleValidationResponse,
+  RuleReportRequest,
+  RuleReportResponse
 } from '../types/rule';
 
 // API 설정
@@ -48,7 +50,30 @@ export default {
   // 룰 검증 API
   async validateRule(request: RuleValidationRequest): Promise<RuleValidationResponse> {
     try {
-      const response = await apiClient.post<RuleValidationResponse>('/api/v1/rules/validate', request);
+      // 원래의 Rule 형식을 사용하는 경우
+      if ('rule' in request) {
+        const response = await apiClient.post<RuleValidationResponse>('/api/v1/rules/validate', request);
+        return response.data;
+      } 
+      // 원본 JSON 포맷을 사용하는 경우
+      else if ('rule_json' in request) {
+        const response = await apiClient.post<RuleValidationResponse>('/api/v1/rules/validate-json', request);
+        return response.data;
+      }
+      // 호환성을 위해 request가 rule을 포함하지 않는 경우
+      else {
+        const response = await apiClient.post<RuleValidationResponse>('/api/v1/rules/validate-json', { rule_json: request });
+        return response.data;
+      }
+    } catch (error) {
+      return handleApiError(error);
+    }
+  },
+  
+  // 룰 리포트 생성 API
+  async generateRuleReport(request: RuleReportRequest): Promise<RuleReportResponse> {
+    try {
+      const response = await apiClient.post<RuleReportResponse>('/api/v1/rules/report', request);
       return response.data;
     } catch (error) {
       return handleApiError(error);

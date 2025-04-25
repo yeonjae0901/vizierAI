@@ -42,11 +42,24 @@ export interface ValidationResult {
   summary: string;
 }
 
-export interface RuleValidationRequest {
-  rule: Rule;
-}
+// 두 가지 형태의 요청을 모두 허용하는 유니온 타입
+export type RuleValidationRequest = 
+  | { rule: Rule } 
+  | { rule_json: Record<string, any> }
+  | Record<string, any>; // 호환성을 위한 추가 타입 (rule_json으로 처리됨)
 
 export interface RuleValidationResponse {
   validation_result: ValidationResult;
   rule_summary: string;
+}
+
+export interface RuleReportRequest {
+  rule_json: Record<string, any>;
+  include_markdown?: boolean;
+}
+
+export interface RuleReportResponse {
+  report: string;
+  rule_id?: string;
+  rule_name?: string;
 } 

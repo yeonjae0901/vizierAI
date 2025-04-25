@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import rule_generator, rule_validator
+from app.api import api_router
 
 app = FastAPI(
     title="Rule AI System API",
@@ -17,9 +17,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# API 라우터 등록
-app.include_router(rule_generator.router, prefix="/api/v1/rules", tags=["rules"])
-app.include_router(rule_validator.router, prefix="/api/v1/rules", tags=["rules"])
+# API 라우터 등록 - prefix 수정
+app.include_router(api_router)
 
 @app.get("/")
 async def root():

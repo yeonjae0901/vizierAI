@@ -19,6 +19,10 @@ class RuleValidationRequest(BaseModel):
     """Request model for rule validation"""
     rule: Rule = Field(..., description="Rule to validate")
 
+class RuleJsonValidationRequest(BaseModel):
+    """Request model for rule validation using the original JSON format"""
+    rule_json: Dict[str, Any] = Field(..., description="Rule JSON to validate")
+
 class RuleValidationResponse(BaseModel):
     """Response model for rule validation"""
     validation_result: ValidationResult = Field(..., description="Validation result")

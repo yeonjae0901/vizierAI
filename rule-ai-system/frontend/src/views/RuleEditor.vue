@@ -42,7 +42,10 @@
     <div v-if="generatedRule" class="generated-rule card">
       <div class="rule-header">
         <h3>생성된 룰</h3>
-        <button class="btn btn-secondary" @click="validateRule">유효성 검사</button>
+        <div class="button-group">
+          <button class="btn btn-secondary" @click="validateRule">유효성 검사</button>
+          <button class="btn btn-primary" @click="checkRule">룰 체크</button>
+        </div>
       </div>
       
       <div class="explanation">
@@ -55,13 +58,31 @@
         <pre><code>{{ JSON.stringify(generatedRule, null, 2) }}</code></pre>
       </div>
     </div>
+    
+    <div v-if="ruleReport" class="rule-report card">
+      <h3>룰 오류 검토 보고서</h3>
+      <div v-if="isLoadingReport" class="loading-indicator">
+        보고서 생성 중...
+      </div>
+      <div v-else class="report-content">
+        <div v-html="renderedReport"></div>
+        
+        <div class="report-actions">
+          <button class="btn btn-outline" @click="copyReportToClipboard">
+            보고서 복사
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script lang="ts">
-import { defineComponent, ref } from 'vue'
+import { defineComponent, ref, computed } from 'vue'
 import apiService from '../services/apiService'
 import type { Rule, RuleGenerationResponse } from '../types/rule'
+// @ts-ignore
+import * as marked from 'marked'
 
 export default defineComponent({
   name: 'RuleEditor',
@@ -72,6 +93,20 @@ export default defineComponent({
     const error = ref<string | null>(null)
     const generatedRule = ref<Rule | null>(null)
     const generatedExplanation = ref('')
+    
+    const ruleReport = ref<string | null>(null)
+    const isLoadingReport = ref(false)
+    
+    const renderedReport = computed(() => {
+      if (!ruleReport.value) return ''
+      
+      try {
+        return marked(ruleReport.value)
+      } catch (err) {
+        console.error('마크다운 변환 오류:', err)
+        return ruleReport.value
+      }
+    })
     
     const generateRule = async () => {
       if (!ruleDescription.value.trim()) {
@@ -102,12 +137,43 @@ export default defineComponent({
       if (!generatedRule.value) return
       
       try {
-        // 룰 유효성 검사 화면으로 전환하는 로직
-        // 실제 구현에서는 상태 관리 라이브러리나 이벤트 버스를 통해 구현할 수 있음
         alert('유효성 검사 페이지로 이동하세요.')
       } catch (err: any) {
         error.value = err.message || '오류가 발생했습니다.'
       }
+    }
+    
+    const checkRule = async () => {
+      if (!generatedRule.value) return
+      
+      isLoadingReport.value = true
+      ruleReport.value = null
+      error.value = null
+      
+      try {
+        const response = await apiService.generateRuleReport({
+          rule_json: generatedRule.value
+        })
+        
+        ruleReport.value = response.report
+      } catch (err: any) {
+        error.value = err.message || '리포트 생성 중 오류가 발생했습니다.'
+      } finally {
+        isLoadingReport.value = false
+      }
+    }
+    
+    const copyReportToClipboard = () => {
+      if (!ruleReport.value) return
+      
+      navigator.clipboard.writeText(ruleReport.value)
+        .then(() => {
+          alert('보고서가 클립보드에 복사되었습니다.')
+        })
+        .catch(err => {
+          console.error('클립보드 복사 오류:', err)
+          alert('보고서 복사에 실패했습니다.')
+        })
     }
     
     return {
@@ -118,7 +184,12 @@ export default defineComponent({
       generatedRule,
       generatedExplanation,
       generateRule,
-      validateRule
+      validateRule,
+      ruleReport,
+      isLoadingReport,
+      renderedReport,
+      checkRule,
+      copyReportToClipboard
     }
   }
 })
@@ -189,6 +260,71 @@ pre {
 }
 
 code {
+  font-family: 'Fira Code', monospace;
+  font-size: 0.875rem;
+}
+
+.rule-report {
+  margin-top: 2rem;
+  background-color: #f8fafc;
+}
+
+.report-content {
+  padding: 1rem;
+}
+
+.loading-indicator {
+  padding: 2rem;
+  text-align: center;
+  color: var(--secondary-color);
+}
+
+.report-actions {
+  margin-top: 1.5rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.button-group {
+  display: flex;
+  gap: 0.5rem;
+}
+
+:deep(h1) {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+:deep(h2) {
+  font-size: 1.25rem;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+:deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0;
+}
+
+:deep(th), :deep(td) {
+  border: 1px solid #ddd;
+  padding: 0.5rem;
+  text-align: left;
+}
+
+:deep(th) {
+  background-color: #f1f5f9;
+}
+
+:deep(pre) {
+  background-color: #f1f1f1;
+  padding: 0.75rem;
+  border-radius: 0.25rem;
+  overflow-x: auto;
+}
+
+:deep(code) {
   font-family: 'Fira Code', monospace;
   font-size: 0.875rem;
 }

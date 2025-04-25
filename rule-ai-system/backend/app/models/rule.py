@@ -21,6 +21,9 @@ class Rule(BaseModel):
     actions: List[RuleAction] = Field(..., description="List of actions to perform if conditions are met")
     priority: int = Field(default=1, description="Rule execution priority (lower means higher priority)")
     enabled: bool = Field(default=True, description="Whether the rule is enabled or not")
+    
+    class Config:
+        from_attributes = True
 
 class RuleGenerationRequest(BaseModel):
     """Request model for rule generation"""
