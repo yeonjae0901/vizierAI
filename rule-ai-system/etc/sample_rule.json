@@ -1,0 +1,31 @@
+{
+  "id": "sample-rule-001",
+  "name": "대량 구매 할인 규칙",
+  "description": "고객이 10개 이상의 상품을 구매하면 전체 주문에 10% 할인을 적용한다",
+  "conditions": [
+    {
+      "field": "order_quantity",
+      "operator": "gte",
+      "value": 10
+    }
+  ],
+  "actions": [
+    {
+      "action_type": "apply_discount",
+      "parameters": {
+        "discount_type": "percentage",
+        "discount_value": 10,
+        "apply_to": "order_total"
+      }
+    },
+    {
+      "action_type": "send_notification",
+      "parameters": {
+        "channel": "email",
+        "template": "discount_applied"
+      }
+    }
+  ],
+  "priority": 1,
+  "enabled": true
+} 
