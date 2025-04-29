@@ -113,7 +113,7 @@ Rule AI System은 비즈니스 룰을 생성, 검증 및 분석하는 AI 기반 
   ```json
   {
     "validation_result": {
-      "valid": true,
+      "is_valid": true,
       "issues": [
         {
           "severity": "warning",
@@ -200,7 +200,7 @@ interface ValidationIssue {
 ### ValidationResult 모델
 ```typescript
 interface ValidationResult {
-  valid: boolean;
+  is_valid: boolean;
   issues: ValidationIssue[];
   summary: string;
 }
@@ -304,20 +304,24 @@ npm run dev
 - 컴포넌트 재사용성 고려
 - API 호출 시 오류 처리 로직 구현
 
-## 10. 확장 가능성
+## 10. 최근 업데이트
 
-### 추가 기능 아이디어
-- 룰 히스토리 관리 및 버전 관리
-- 룰 테스트 케이스 생성 및 실행
-- 룰 시각화 (의사결정 트리, 플로우차트)
-- 룰 라이브러리 구축 및 재사용
-- 여러 LLM 모델 지원 (Claude, Llama 등)
+### 프론트엔드 개선사항 (2023-04-30)
+- ValidationReport 컴포넌트의 JSON 중첩 문제 해결
+  - 사용자 입력 JSON이 이미 `rule_json` 객체를 포함하는 경우 중첩 제거
+  - 파싱된 데이터 구조 분석 후 올바른 형태로 API 요청
+- 백엔드 API 응답 필드명 동기화
+  - 백엔드 응답의 `is_valid` 필드와 프론트엔드 타입 일치
+  - ValidationResult 인터페이스의 `valid` 속성을 `is_valid`로 변경
+- 전체 UI 한국어 지원 강화
+  - 영문 에러 메시지 및 상태 텍스트 한국어로 번역
+  - severity 값(error, warning, info)을 한국어('오류', '경고', '정보')로 변환
+  - 'Unnamed Rule'을 '이름 없는 룰'로 표시
+  - 검증 결과 메시지 한국어 변환 기능 추가
 
-### 통합 가능성
-- 기존 비즈니스 룰 엔진과 통합
-- CI/CD 파이프라인 연결
-- 사용자 관리 및 권한 시스템 추가
-- 다국어 지원
+### 데이터 모델 수정사항
+- ValidationResult 모델의 `valid` 필드를 `is_valid`로 변경하여 백엔드와 일관성 유지
+- 한국어 인터페이스를 위한 텍스트 처리 로직 추가
 
 ## 11. 문제 해결 가이드
 
@@ -326,6 +330,7 @@ npm run dev
 - **API 엔드포인트 404**: 서버가 실행 중인지, URL이 올바른지 확인
 - **검증 오류 422**: JSON 형식이 API 스펙과 일치하는지 확인
 - **마크다운 렌더링 오류**: 프론트엔드 패키지가 올바르게 설치되었는지 확인
+- **JSON 중첩 오류**: 요청 구조에 `rule_json` 키가 중복되지 않았는지 확인
 
 ### 디버깅 팁
 - 백엔드 로그 확인 (`--log-level=debug` 옵션 사용)

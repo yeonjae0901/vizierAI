@@ -37,7 +37,7 @@ export interface ValidationIssue {
 }
 
 export interface ValidationResult {
-  valid: boolean;
+  is_valid: boolean;
   issues: ValidationIssue[];
   summary: string;
 }

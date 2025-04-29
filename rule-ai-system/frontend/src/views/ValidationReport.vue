@@ -31,10 +31,10 @@
     </div>
     
     <div v-if="validationResult" class="validation-result card">
-      <div class="result-header" :class="{ 'valid': validationResult.valid, 'invalid': !validationResult.valid }">
-        <h3>{{ validationResult.valid ? '룰이 유효합니다' : '룰에 문제가 있습니다' }}</h3>
-        <div class="result-badge" :class="{ 'valid': validationResult.valid, 'invalid': !validationResult.valid }">
-          {{ validationResult.valid ? '유효' : '오류' }}
+      <div class="result-header" :class="{ 'valid': validationResult.is_valid, 'invalid': !validationResult.is_valid }">
+        <h3>{{ validationResult.is_valid ? '룰이 유효합니다' : '룰에 문제가 있습니다' }}</h3>
+        <div class="result-badge" :class="{ 'valid': validationResult.is_valid, 'invalid': !validationResult.is_valid }">
+          {{ validationResult.is_valid ? '유효' : '오류' }}
         </div>
       </div>
       
@@ -53,7 +53,7 @@
         <ul class="issue-list">
           <li v-for="(issue, index) in validationResult.issues" :key="index" class="issue-item" :class="issue.severity">
             <div class="issue-header">
-              <span class="issue-badge" :class="issue.severity">{{ issue.severity }}</span>
+              <span class="issue-badge" :class="issue.severity">{{ getSeverityText(issue.severity) }}</span>
               <span class="issue-message">{{ issue.message }}</span>
             </div>
             <div v-if="issue.location" class="issue-location">
@@ -70,7 +70,7 @@
     <div v-if="reportResult" class="report-result card">
       <div class="result-header">
         <h3>상세 리포트</h3>
-        <div v-if="reportResult.rule_name" class="rule-name">{{ reportResult.rule_name }}</div>
+        <div v-if="reportResult.rule_name" class="rule-name">{{ getKoreanRuleName(reportResult.rule_name) }}</div>
       </div>
       
       <div class="report-content" v-html="formattedReport"></div>
@@ -94,6 +94,28 @@ export default defineComponent({
     const ruleSummary = ref<string | null>(null)
     const reportResult = ref<{ report: string, rule_id?: string, rule_name?: string } | null>(null)
     const formattedReport = ref<string>('')
+    
+    // severity 값을 한국어로 변환하는 함수
+    const getSeverityText = (severity: string): string => {
+      switch (severity) {
+        case 'error':
+          return '오류';
+        case 'warning':
+          return '경고';
+        case 'info':
+          return '정보';
+        default:
+          return severity;
+      }
+    }
+    
+    // 룰 이름을 한국어로 변환하는 함수
+    const getKoreanRuleName = (ruleName: string): string => {
+      if (ruleName === 'Unnamed Rule') {
+        return '이름 없는 룰';
+      }
+      return ruleName;
+    }
     
     const jsonError = computed(() => {
       if (!ruleJson.value) return null
@@ -163,33 +185,98 @@ export default defineComponent({
       
       try {
         // JSON을 파싱
-        const ruleData = JSON.parse(ruleJson.value)
+        const parsedData = JSON.parse(ruleJson.value)
+        console.log('파싱된 룰 JSON:', parsedData);
         
-        // 먼저 룰 검증 수행
-        const validationResponse = await apiService.validateRule({ rule_json: ruleData })
-        validationResult.value = validationResponse.validation_result
-        ruleSummary.value = validationResponse.rule_summary
+        // rule_json이 이미 있는지 확인하고 적절한 요청 객체 생성
+        const ruleData = parsedData.rule_json ? parsedData.rule_json : parsedData;
+        const validationRequest = { rule_json: ruleData };
+        console.log('검증 요청:', validationRequest);
+        
+        const validationResponse = await apiService.validateRule(validationRequest);
+        console.log('검증 응답:', validationResponse);
+        
+        // 영문 메시지를 한국어로 변환
+        if (validationResponse.validation_result) {
+          translateValidationResult(validationResponse.validation_result);
+        }
+        
+        validationResult.value = validationResponse.validation_result;
+        ruleSummary.value = validationResponse.rule_summary;
         
         // 그 다음 상세 리포트 생성
-        const reportResponse = await apiService.generateRuleReport({ 
+        console.log('리포트 생성 API 호출 시작');
+        const reportRequest = { 
           rule_json: ruleData,
           include_markdown: true
-        })
+        };
+        console.log('리포트 요청:', reportRequest);
+        
+        const reportResponse = await apiService.generateRuleReport(reportRequest);
+        console.log('리포트 응답:', reportResponse);
         
         reportResult.value = {
           report: reportResponse.report,
           rule_id: reportResponse.rule_id,
           rule_name: reportResponse.rule_name
-        }
+        };
         
         // 마크다운 렌더링
         if (reportResponse.report) {
-          formattedReport.value = renderMarkdown(reportResponse.report)
+          console.log('마크다운 렌더링 시작');
+          formattedReport.value = renderMarkdown(reportResponse.report);
+          console.log('마크다운 렌더링 완료');
         }
       } catch (err: any) {
-        error.value = err.message || '처리 중 오류가 발생했습니다.'
+        console.error('생성 오류:', err);
+        error.value = err.message || '처리 중 오류가 발생했습니다.';
       } finally {
-        isLoading.value = false
+        isLoading.value = false;
+      }
+    }
+    
+    // 영문 메시지를 한국어로 변환하는 함수
+    const translateValidationResult = (result: ValidationResult): void => {
+      if (result.issues && result.issues.length > 0) {
+        result.issues.forEach(issue => {
+          // 오류 메시지 번역
+          if (issue.message.includes('Duplicate condition')) {
+            issue.message = issue.message.replace('Duplicate condition', '중복 조건');
+          } else if (issue.message.includes('Invalid operator')) {
+            issue.message = issue.message.replace('Invalid operator', '잘못된 연산자');
+            issue.message = issue.message.replace('used for', '사용됨 (필드:');
+            issue.message = issue.message.replace('Use only', '다음만 사용 가능:');
+          } else if (issue.message.includes('Contradiction')) {
+            issue.message = issue.message.replace('Contradiction', '모순 조건');
+            issue.message = issue.message.replace('cannot be both', '값이 동시에 다음일 수 없음:');
+            issue.message = issue.message.replace('and', '그리고');
+          } else if (issue.message.includes('Self-contradiction')) {
+            issue.message = issue.message.replace('Self-contradiction', '자가 모순');
+            issue.message = issue.message.replace('has both equality and inequality for same value', '동일한 값에 대해 같음과 같지 않음 조건이 동시에 존재');
+          }
+          
+          // 위치 번역
+          if (issue.location) {
+            issue.location = issue.location.replace('condition', '조건');
+            issue.location = issue.location.replace('at index', '인덱스 위치');
+          }
+          
+          // 제안 번역
+          if (issue.suggestion) {
+            issue.suggestion = issue.suggestion.replace('Consider', '다음을 고려하세요:');
+            issue.suggestion = issue.suggestion.replace('Remove', '제거하세요:');
+            issue.suggestion = issue.suggestion.replace('one of the contradicting conditions', '모순된 조건 중 하나를');
+          }
+        });
+      }
+      
+      // 요약 메시지가 비어있는 경우 기본 메시지 설정
+      if (!result.summary || result.summary === '') {
+        if (result.is_valid) {
+          result.summary = '룰이 모든 검증을 통과했습니다.';
+        } else {
+          result.summary = `룰에서 ${result.issues.length}개의 문제가 발견되었습니다.`;
+        }
       }
     }
     
@@ -202,6 +289,8 @@ export default defineComponent({
       ruleSummary,
       reportResult,
       formattedReport,
+      getSeverityText,
+      getKoreanRuleName,
       generateReport
     }
   }
