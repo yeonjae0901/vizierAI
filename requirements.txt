@@ -7,7 +7,6 @@ starlette==0.27.0
 
 # 유틸리티
 pydantic>=2.5.0
-
 annotated-types==0.7.0
 python-dotenv==1.0.0
 typing_extensions==4.13.2
@@ -36,4 +35,7 @@ tqdm==4.67.1
 schedule==1.2.1
 
 # Kafka
-kafka-python==2.0.2 
+kafka-python==2.0.2
+
+# 추가 유틸리티
+marked==6.0.0  # 마크다운 렌더링 

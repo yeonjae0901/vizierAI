@@ -7,6 +7,7 @@
 - Python 3.9 이상
 - pip
 - Git
+- Node.js 18.0 이상 및 npm
 - Docker 및 docker-compose (선택사항)
 
 ## 공통 가상환경 설정
@@ -45,6 +46,7 @@ cp .env.example .env
 ```bash
 # 텍스트 에디터로 .env 파일 열고 필요한 값 설정
 # 특히 OPENAI_API_KEY는 반드시 설정해야 합니다
+nano .env
 ```
 
 3. 백엔드 실행
@@ -60,22 +62,61 @@ npm install  # 패키지 설치
 npm run dev  # 개발 서버 실행
 ```
 
+5. 웹 브라우저에서 접속
+- 백엔드: http://localhost:8000/api/docs
+- 프론트엔드: http://localhost:5173
+
 ## Docker를 이용한 실행
 
-1. Docker Compose 사용
+1. 환경변수 설정
+```bash
+cd rule-ai-system
+cp .env.example .env
+# .env 파일을 편집하여 필요한 환경변수 설정
+```
+
+2. Docker Compose 사용
 ```bash
 cd rule-ai-system
 docker-compose up -d  # 백그라운드에서 실행
 ```
 
-2. 로그 확인
+3. 로그 확인
 ```bash
 docker-compose logs -f  # 실시간 로그 확인
 ```
 
-3. 중지
+4. 서비스 접속
+- 백엔드: http://localhost:8000/api/docs
+- 프론트엔드: http://localhost:80
+
+5. 중지
 ```bash
 docker-compose down
+```
+
+## 개발 및 배포 가이드
+
+### 개발 모드
+```bash
+# 백엔드 개발 모드 (자동 재시작)
+cd rule-ai-system/backend
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# 프론트엔드 개발 모드 (핫 리로드)
+cd rule-ai-system/frontend
+npm run dev
+```
+
+### 프로덕션 빌드
+```bash
+# 프론트엔드 빌드
+cd rule-ai-system/frontend
+npm run build
+
+# 백엔드 프로덕션 실행
+cd rule-ai-system/backend
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 ## 문제 해결
@@ -104,4 +145,11 @@ pip install -r requirements.txt
 OpenAI API 키 관련 오류:
 1. 유효한 API 키인지 확인
 2. 요금제 한도가 충분한지 확인
-3. 네트워크 연결 상태 확인 
+3. 네트워크 연결 상태 확인
+
+### 프론트엔드 빌드 오류
+
+TypeScript 또는 Vue 관련 오류:
+1. Node.js 버전이 최소 요구사항을 충족하는지 확인
+2. npm 패키지가 최신 상태인지 확인: `npm update`
+3. 의존성 캐시를 삭제하고 다시 설치: `rm -rf node_modules && npm install` 

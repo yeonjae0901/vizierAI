@@ -112,19 +112,26 @@ Rule AI System은 비즈니스 룰을 생성, 검증 및 분석하는 AI 기반 
 - **응답 형식**:
   ```json
   {
-    "validation_result": {
-      "is_valid": true,
-      "issues": [
-        {
-          "severity": "warning",
-          "message": "조건이 중복됩니다",
-          "location": "conditions[0]",
-          "suggestion": "중복 조건을 제거하세요"
-        }
-      ],
-      "summary": "룰은 유효하지만 개선이 필요합니다."
+    "is_valid": true,
+    "summary": "이 룰은 유효합니다.",
+    "issues": [
+      {
+        "severity": "warning",
+        "field": "MBL_ACT_MEM_PCNT",
+        "issue_type": "duplicate_condition",
+        "location": "조건 1의 중첩 조건",
+        "explanation": "'MBL_ACT_MEM_PCNT' 필드에 대한 중복된 조건이 있습니다.",
+        "suggestion": "'MBL_ACT_MEM_PCNT' 필드에 중복된 조건이 있습니다. 하나의 조건으로 통합하세요."
+      }
+    ],
+    "issue_counts": {
+      "duplicate_condition": 1
     },
-    "rule_summary": "이 룰은 무선 회선이 3개 이상인 고객에게 10% 할인을 적용합니다."
+    "structure": {
+      "depth": 3,
+      "condition_count": 5,
+      "unique_fields": ["MBL_ACT_MEM_PCNT", "ENTR_STUS_CD"]
+    }
   }
   ```
 
@@ -191,8 +198,11 @@ interface RuleAction {
 ```typescript
 interface ValidationIssue {
   severity: 'error' | 'warning' | 'info';
-  message: string;
+  message?: string;
+  field?: string;
+  issue_type?: string;
   location?: string;
+  explanation?: string;
   suggestion?: string;
 }
 ```
@@ -201,8 +211,14 @@ interface ValidationIssue {
 ```typescript
 interface ValidationResult {
   is_valid: boolean;
-  issues: ValidationIssue[];
   summary: string;
+  issues: ValidationIssue[];
+  issue_counts?: Record<string, number>;
+  structure?: {
+    depth: number;
+    condition_count: number;
+    unique_fields: string[];
+  };
 }
 ```
 

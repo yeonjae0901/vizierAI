@@ -6,6 +6,16 @@
 
 - [프로젝트 구조](docs/project_structure.md): 프로젝트 전체 구조에 대한 설명
 - [설정 가이드](docs/setup_guide.md): 프로젝트 설정 방법 안내
+- [Rule AI System](docs/rule-ai-system/technical-architecture.md): 룰 AI 시스템 기술 아키텍처 문서
+- [사용자 매뉴얼](docs/rule-ai-system/user-manual.md): 사용자 매뉴얼
+
+## 최근 업데이트 내용
+
+### 룰 검증 기능 개선 (2024-05)
+- 룰 검증 화면 UI/UX 개선
+- 검증 결과에 룰 구조 정보 및 이슈 요약 추가
+- 이슈 표시 방식 개선 (필드별 구분, 이슈 타입 명시)
+- API 호출 방식 개선 (/api/v1/rules/validate-json 직접 호출)
 
 ## 가상환경 설정
 
