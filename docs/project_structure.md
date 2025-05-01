@@ -25,8 +25,23 @@ vizierAI/
 │   │   ├── Dockerfile     # 백엔드 Docker 설정
 │   │   ├── app/           # 백엔드 애플리케이션 코드
 │   │   │   ├── api/       # API 엔드포인트
+│   │   │   │   ├── __init__.py  # API 라우터 설정
+│   │   │   │   ├── rule_validator.py  # 레거시 룰 검증 API
+│   │   │   │   ├── rule_report.py  # 리포트 생성 API
+│   │   │   │   └── v1/      # 버전화된 API
+│   │   │   │       └── rule_validator.py  # v1 룰 검증 API
 │   │   │   ├── models/    # 데이터 모델
+│   │   │   │   ├── rule.py  # 룰 모델
+│   │   │   │   ├── validation_result.py  # 검증 결과 모델 
+│   │   │   │   ├── rule_json_validation_request.py  # JSON 검증 요청 모델
+│   │   │   │   └── report.py  # 리포트 모델
 │   │   │   ├── services/  # 비즈니스 로직 서비스
+│   │   │   │   ├── rule_analyzer.py  # 룰 분석 서비스
+│   │   │   │   ├── rule_report_service.py  # 리포트 생성 서비스
+│   │   │   │   ├── llm_service.py  # LLM API 연동
+│   │   │   │   ├── rule_parser.py  # 룰 파싱 유틸리티
+│   │   │   │   ├── fixed_report_service.py  # 고정 리포트 서비스
+│   │   │   │   └── test_report.py  # 리포트 테스트 유틸리티
 │   │   │   ├── config.py  # 환경 설정
 │   │   │   └── main.py    # 애플리케이션 진입점
 │   │   └── requirements.txt  # 백엔드 전용 의존성
@@ -64,25 +79,23 @@ rule-ai-system은 AI 기반 규칙 시스템을 구현한 프로젝트입니다.
 #### 백엔드
 
 - `backend/app/`: FastAPI 백엔드 애플리케이션
-  - `api/`: API 엔드포인트 정의 (rule_generator.py, rule_validator.py, rule_report.py)
+  - `api/`: API 엔드포인트 정의
+    - `rule_validator.py`: 룰 유효성 검사(v1보다 이전 버전)
+    - `rule_report.py`: 리포트 생성
+    - `v1/rule_validator.py`: 버전화된 룰 유효성 검사
   - `models/`: 데이터 모델 정의 (rule.py, validation_result.py, report.py)
-  - `services/`: 비즈니스 로직 구현 (llm_service.py, rule_analyzer.py, rule_generator.py)
+  - `services/`: 비즈니스 로직 구현 (llm_service.py, rule_analyzer.py, rule_report_service.py)
 - `backend/Dockerfile`: 백엔드 서비스 도커 이미지 설정
 
 #### 프론트엔드
 
 - `frontend/src/`: Vue.js 기반 프론트엔드 애플리케이션
-  - `views/`: 화면 컴포넌트 (RuleEditor.vue, ValidationReport.vue)
+  - `views/`: 화면 컴포넌트 (ValidationReport.vue)
   - `services/`: API 호출 서비스 (apiService.ts)
   - `types/`: 타입 정의 (rule.ts)
 - `frontend/Dockerfile`: 프론트엔드 서비스 도커 이미지 설정
 
 ## 주요 기능
-
-### 룰 생성 기능
-- 자연어 설명에서 구조화된 룰 자동 생성
-- 생성된 룰 설명 및 주석 생성
-- 룰 JSON 내보내기 및 편집
 
 ### 룰 검증 기능
 - 기존 룰의 논리적 오류 검증

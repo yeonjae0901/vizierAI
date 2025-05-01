@@ -49,6 +49,13 @@ cp .env.example .env
 nano .env
 ```
 
+내용 예시:
+```
+OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxx
+LOG_LEVEL=INFO
+ENVIRONMENT=development
+```
+
 3. 백엔드 실행
 ```bash
 cd backend
@@ -119,6 +126,28 @@ cd rule-ai-system/backend
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
+## API 엔드포인트 테스트
+
+### 룰 검증 API 테스트
+```bash
+# v1 API
+curl -X POST http://localhost:8000/api/v1/rules/validate-json \
+  -H "Content-Type: application/json" \
+  -d '{"rule_json": {"ruleId": "R123", "name": "테스트 룰", "conditions": {"operator": "and", "conditions": [{"field": "SVC_CNT", "operator": ">=", "value": 3}]}}}'
+
+# 레거시 API
+curl -X POST http://localhost:8000/api/rules/validate-json \
+  -H "Content-Type: application/json" \
+  -d '{"rule_json": {"ruleId": "R123", "name": "테스트 룰", "conditions": {"operator": "and", "conditions": [{"field": "SVC_CNT", "operator": ">=", "value": 3}]}}}'
+```
+
+### 리포트 생성 API 테스트
+```bash
+curl -X POST http://localhost:8000/api/v1/rules/report \
+  -H "Content-Type: application/json" \
+  -d '{"rule_json": {"ruleId": "R123", "name": "테스트 룰", "conditions": {"operator": "and", "conditions": [{"field": "SVC_CNT", "operator": ">=", "value": 3}]}}, "include_markdown": true}'
+```
+
 ## 문제 해결
 
 ### 의존성 설치 오류
@@ -152,4 +181,11 @@ OpenAI API 키 관련 오류:
 TypeScript 또는 Vue 관련 오류:
 1. Node.js 버전이 최소 요구사항을 충족하는지 확인
 2. npm 패키지가 최신 상태인지 확인: `npm update`
-3. 의존성 캐시를 삭제하고 다시 설치: `rm -rf node_modules && npm install` 
+3. 의존성 캐시를 삭제하고 다시 설치: `rm -rf node_modules && npm install`
+
+### API 응답 오류
+
+API 응답 오류가 발생하는 경우:
+1. 서버 로그 확인: 백엔드 콘솔 출력 또는 `/var/log/rule-validator/app.log`
+2. 요청 형식이 올바른지 확인: API 문서 참조
+3. 서버 재시작 시도: `Ctrl+C`로 서버 중지 후 다시 실행 

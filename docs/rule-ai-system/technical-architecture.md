@@ -4,8 +4,8 @@
 
 이 문서는 Rule AI System의 전체 아키텍처, 데이터 흐름, 소스 코드 구조 및 주요 함수에 대한 상세 설명을 제공합니다.
 
-**문서 작성일**: 2024-05-20  
-**최종 업데이트**: 2024-05-20  
+**문서 작성일**: 2024-05-25  
+**최종 업데이트**: 2024-06-12  
 **작성자**: 기술 문서 작성팀
 
 ## 🏗️ 시스템 아키텍처
@@ -27,23 +27,26 @@
 ├── app/
 │   ├── api/                   # API 엔드포인트 정의
 │   │   ├── __init__.py       # API 라우터 설정
-│   │   ├── rule_generator.py # 룰 생성 API
-│   │   ├── rule_validator.py # 룰 검증 API
-│   │   └── rule_report.py    # 리포트 생성 API
+│   │   ├── rule_validator.py # 룰 검증 API (레거시)
+│   │   ├── rule_report.py    # 리포트 생성 API
+│   │   └── v1/               # 버전화된 API
+│   │       └── rule_validator.py # 룰 검증 API v1
 │   │
 │   ├── models/               # 데이터 모델 정의
 │   │   ├── __init__.py
 │   │   ├── rule.py           # 룰 관련 데이터 모델
 │   │   ├── validation_result.py # 검증 결과 모델
+│   │   ├── rule_json_validation_request.py # JSON 검증 요청 모델
 │   │   └── report.py         # 리포트 관련 모델
 │   │
 │   ├── services/             # 비즈니스 로직 서비스
 │   │   ├── __init__.py
 │   │   ├── llm_service.py    # LLM API 통신 서비스
-│   │   ├── rule_generator.py # 룰 생성 서비스
 │   │   ├── rule_analyzer.py  # 룰 검증 서비스
 │   │   ├── rule_parser.py    # 룰 파싱 서비스
-│   │   └── rule_report_service.py # 리포트 생성 서비스
+│   │   ├── rule_report_service.py # 리포트 생성 서비스
+│   │   ├── fixed_report_service.py # 고정 형식 리포트 서비스
+│   │   └── test_report.py    # 리포트 테스트 유틸리티
 │   │
 │   ├── config.py             # 환경 설정
 │   └── main.py               # 애플리케이션 진입점
@@ -61,7 +64,6 @@
 │   │   └── rule.ts          # 룰 관련 인터페이스
 │   │
 │   ├── views/               # 화면 컴포넌트
-│   │   ├── RuleEditor.vue   # 룰 생성 화면
 │   │   └── ValidationReport.vue # 룰 검증 화면
 │   │
 │   ├── App.vue              # 메인 앱 컴포넌트
@@ -70,36 +72,7 @@
 
 ## 🌊 데이터 흐름
 
-### 1. 룰 생성 흐름 (Rule Generation Flow)
-
-```
-┌─────────────┐     ┌───────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│ 사용자 입력  │────►│ RuleEditor.vue │────►│ apiService.ts   │────►│ rule_generator.py│
-│ (자연어 설명) │     │ (프론트엔드)   │     │ (generateRule)  │     │ (API 엔드포인트) │
-└─────────────┘     └───────────────┘     └─────────────────┘     └────────┬────────┘
-                                                                           │
-                                                                           ▼
-┌─────────────┐     ┌───────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│ 화면에 표시  │◄────│ RuleEditor.vue │◄────│ apiService.ts   │◄────│ RuleGeneratorSvc│
-│ (JSON 룰)   │     │ (프론트엔드)   │     │ (응답 처리)     │     │ (룰 생성 처리)  │
-└─────────────┘     └───────────────┘     └─────────────────┘     └────────┬────────┘
-                                                                           │
-                                                                           ▼
-                                                                  ┌─────────────────┐
-                                                                  │   LLMService    │
-                                                                  │ (OpenAI API 호출)│
-                                                                  └─────────────────┘
-```
-
-1. 사용자가 RuleEditor에 자연어 설명과 추가 컨텍스트 입력
-2. 프론트엔드의 apiService가 백엔드 API 호출
-3. 백엔드 API(rule_generator.py)가 요청을 받아 RuleGeneratorService 호출
-4. RuleGeneratorService가 프롬프트 생성 후 LLMService 통해 OpenAI API 호출
-5. OpenAI가 생성한 룰을 파싱하고 검증
-6. 검증된 룰과 설명을 응답으로 반환
-7. 프론트엔드에서 결과 표시
-
-### 2. 룰 검증 흐름 (Rule Validation Flow)
+### 1. 룰 검증 흐름 (Rule Validation Flow)
 
 ```
 ┌─────────────┐     ┌───────────────────┐     ┌─────────────────┐     ┌─────────────────┐
@@ -114,36 +87,32 @@
 └─────────────┘     └───────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
+프로세스 설명:
 1. 사용자가 ValidationReport 화면에 JSON 룰 입력
-2. 프론트엔드에서 JSON이 파싱되고 요청 객체 생성
-   - `rule_json` 필드가 있는 경우: 원본 요청 사용
-   - `rule_json` 필드가 없는 경우: 입력 JSON을 `rule_json` 필드에 래핑
-3. `apiService.post()` 메서드를 통해 `/api/v1/rules/validate-json` API 직접 호출
+2. 프론트엔드에서 JSON 파싱 및 요청 객체 생성
+   - `rule_json` 필드가 있으면 원본 사용, 없으면 래핑
+3. `apiService.post('/api/v1/rules/validate-json', requestData)` 호출
 4. 백엔드 API가 요청을 받아 RuleAnalyzerService 호출
-5. RuleAnalyzerService가 룰을 분석하여 검증 결과 생성
+5. RuleAnalyzerService가 룰 분석 및 검증 수행:
    - 중복 조건 검출
-   - 잘못된 연산자 검출
-   - 타입 불일치 검출
-   - 자기 모순 검출
+   - 연산자 검증
+   - 타입 일치 확인
+   - 논리적 모순 확인
    - 구조 복잡도 평가
-6. 응답 객체 생성
-   - `is_valid`: 룰의 유효성 여부
-   - `summary`: 검증 결과 요약
-   - `issues`: 발견된 이슈 목록
-   - `issue_counts`: 이슈 유형별 개수
-   - `structure`: 룰 구조 정보 (깊이, 조건 수, 사용된 필드)
-7. 프론트엔드에서 응답을 처리하여 결과 표시
-   - 유효성 결과와 요약 표시
-   - 룰 구조 정보 표시
-   - 이슈 유형별 개수 표시
-   - 필드별로 구분된 이슈 목록 표시
+6. 결과 객체 생성:
+   - 유효성 여부
+   - 요약 정보
+   - 이슈 목록
+   - 이슈 유형별 개수
+   - 구조 정보
+7. 프론트엔드에서 응답 처리 및 결과 시각화
 
-### 3. 룰 리포트 생성 흐름 (Rule Report Flow)
+### 2. 리포트 생성 흐름 (Rule Report Flow)
 
 ```
 ┌─────────────┐     ┌───────────────────┐     ┌─────────────────┐     ┌────────────────┐
-│ 사용자 입력  │────►│ ValidationReport.vue │──►│ apiService.ts   │────►│ rule_report.py │
-│ (JSON 룰)   │     │ (프론트엔드)       │     │ (generateReport)│     │ (API 엔드포인트)│
+│ JSON 룰 &   │────►│ ValidationReport.vue │──►│ apiService.ts   │────►│ rule_report.py │
+│ 검증 결과    │     │ (프론트엔드)       │     │ (generateReport)│     │ (API 엔드포인트)│
 └─────────────┘     └───────────────────┘     └─────────────────┘     └────────┬───────┘
                                                                                │
                                                                                ▼
@@ -159,12 +128,16 @@
                                                                       └─────────────────┘
 ```
 
-1. 사용자가 ValidationReport에서 검증 결과 확인 후 리포트 생성
-2. 프론트엔드의 apiService가 백엔드 API 호출
-3. 백엔드 API(rule_report.py)가 요청을 받아 RuleReportService 호출
-4. RuleReportService가 프롬프트 생성 후 LLMService 통해 OpenAI API 호출
-5. OpenAI가 생성한 마크다운 리포트를 응답으로 반환
-6. 프론트엔드에서 마크다운을 HTML로 변환하여 표시
+프로세스 설명:
+1. 사용자가 ValidationReport 화면에서 검증 결과 확인 후 리포트 생성 요청
+2. 프론트엔드는 `apiService.generateRuleReport()` 메서드로 API 호출
+3. 백엔드의 rule_report.py가 요청을 받아 RuleReportService 호출
+4. RuleReportService는 LLMService를 통해 OpenAI API 호출
+5. 리포트용 프롬프트 생성 및 OpenAI API 호출
+6. OpenAI가 생성한 마크다운 리포트를 응답으로 반환
+7. 프론트엔드에서 마크다운을 HTML로 변환하여 표시
+
+**중요**: 리포트 생성 API는 검증 API와 독립적으로 작동하며, 동일한 rule_json을 사용하지만 다른 분석을 수행합니다.
 
 ## 📁 주요 컴포넌트 상세 설명
 
@@ -173,282 +146,250 @@
 #### 1. LLMService (llm_service.py)
 - **역할**: OpenAI API 통신 담당
 - **주요 함수**:
-  - `call_llm(prompt, system_message)`: LLM 모델에 요청을 보내고 응답을 반환
-  - `generate_json(prompt, system_message)`: LLM 모델에 JSON 생성 요청을 보내고 파싱된 JSON 반환
-- **오류 처리**: API 키 부재, API 호출 실패, JSON 파싱 실패에 대한 예외 처리
-- **설정**: OpenAI API 키와 모델을 환경 변수 또는 설정 파일에서 로드
+  - `call_llm(prompt, system_message)`: LLM 모델에 요청 및 응답 처리
+  - `generate_json(prompt, system_message)`: 구조화된 JSON 응답 생성
+  - `get_text_generation(prompt, system_message)`: 텍스트 응답 생성
+- **오류 처리**: API 키 인증, 응답 타임아웃, JSON 파싱 실패 처리
 
 #### 2. RuleAnalyzerService (rule_analyzer.py)
 - **역할**: 룰의 논리적 일관성과 구조적 문제 검증
 - **주요 함수**:
   - `validate_rule(rule)`: 룰 객체 검증 및 결과 반환
   - `analyze_rule(rule_json)`: 룰 JSON 분석
-  - `flatten_conditions(conditions_node)`: 조건 트리 평탄화
-  - `detect_duplicate_conditions(conditions)`: 중복 조건 감지
-  - `detect_invalid_operator(conditions)`: 잘못된 연산자 감지
-  - `detect_type_mismatch(conditions)`: 타입 불일치 감지
-  - `detect_self_contradiction(conditions)`: 자기 모순 감지
-  - `evaluate_structure_complexity(conditions_node)`: 구조 복잡도 평가
   - `count_issues_by_type(issues)`: 이슈 유형별 개수 집계
-  - `extract_unique_fields(conditions)`: 조건에서 사용된 고유 필드 추출
-- **검증 프로세스**:
-  1. 룰 객체를 JSON 형식으로 변환
-  2. 조건 트리 평탄화
-  3. 각종 검증 함수 실행
-  4. 이슈 유형별 개수 집계
-  5. 룰 구조 정보 생성 (깊이, 조건 수, 사용된 필드)
-  6. 검증 결과 및 룰 요약 생성
+  - `extract_unique_fields(conditions)`: 사용된 필드 목록 추출
+  - `evaluate_structure_complexity(conditions)`: 구조 복잡도 평가
+- **검증 항목**:
+  - 중복 조건
+  - 타입 불일치
+  - 잘못된 연산자
+  - 모순 조건
+  - 구조 복잡도
 
-#### 3. RuleGeneratorService (rule_generator.py)
-- **역할**: 자연어 설명에서 구조화된 룰 생성
+#### 3. RuleParserService (rule_parser.py)
+- **역할**: 다양한 형식의 룰 데이터 파싱 및 변환
 - **주요 함수**:
-  - `generate_rule(request)`: 자연어 설명에서 룰 생성
-  - `_prepare_prompt(description, additional_context)`: LLM용 프롬프트 생성
-- **생성 프로세스**:
-  1. 자연어 설명과 추가 컨텍스트로 프롬프트 생성
-  2. LLMService를 통해 룰 JSON 생성
-  3. 생성된 룰 파싱 및 검증
-  4. 룰 생성 설명 요청
-  5. 룰과 설명 반환
+  - `parse_rule_json(rule_json)`: JSON에서 규칙 객체로 변환
+  - `normalize_rule_structure(rule_data)`: 규칙 구조 정규화
+  - `extract_conditions(condition_data)`: 조건 정보 추출
 
 #### 4. RuleReportService (rule_report_service.py)
 - **역할**: 룰 분석 리포트 생성
 - **주요 함수**:
-  - `generate_report(rule_json)`: 룰 분석 리포트 생성
-  - `_create_report_prompt(rule_json)`: 리포트 생성용 프롬프트 작성
-  - `_generate_fallback_report(rule_json)`: 오류 발생 시 대체 리포트 생성
-- **리포트 프로세스**:
-  1. 룰 JSON과 메타데이터 추출
-  2. 분석 프롬프트 생성
-  3. LLMService를 통해 마크다운 리포트 생성
-  4. 리포트와 룰 메타데이터 반환
+  - `generate_report(rule_json, validation_result)`: 분석 리포트 생성
+  - `create_report_prompt(rule_data, validation_result)`: 리포트 프롬프트 생성
+  - `format_rule_for_report(rule_data)`: 리포트용 룰 포맷팅
+- **생성 항목**:
+  - 기본 룰 정보
+  - 조건 구조 분석
+  - 이슈 설명 및 제안
+  - 참고 사항 및 개선 방안
 
 ### 프론트엔드 (Frontend)
 
-#### 1. apiService (apiService.ts)
-- **역할**: 백엔드 API와의 통신 담당
+#### 1. ValidationReport (ValidationReport.vue)
+- **역할**: 룰 검증 및 리포트 생성 화면
+- **주요 기능**:
+  - JSON 입력 처리 (직접 입력, 파일 업로드)
+  - 검증 요청 및 결과 표시
+  - 리포트 생성 및 표시
+  - 마크다운 렌더링
+- **주요 컴포넌트**:
+  - JSON 편집기
+  - 검증 결과 패널
+  - 이슈 목록 테이블
+  - 마크다운 렌더러
+  - 파일 업로드 컴포넌트
+
+#### 2. ApiService (apiService.ts)
+- **역할**: 백엔드 API 통신 담당
 - **주요 함수**:
   - `validateRuleJson(ruleJson)`: 룰 검증 API 호출
-  - `generateRuleReport(request)`: 리포트 생성 API 호출
-  - `generateRule(request)`: 룰 생성 API 호출
-  - `post(url, data)`: 일반 POST 요청 함수
-- **오류 처리**: HTTP 오류 처리 및 사용자 친화적인 오류 메시지 생성
-- **인터셉터**: 요청/응답 로깅을 위한 axios 인터셉터 구현
+  - `generateRuleReport(ruleJson, validationResult)`: 리포트 생성 API 호출
+  - `post(endpoint, data)`: 일반 POST 요청 처리
+- **오류 처리**: API 연결 실패, 응답 타임아웃, 요청 형식 오류 처리
 
-#### 2. ValidationReport 컴포넌트 (ValidationReport.vue)
-- **역할**: 룰 검증 화면 제공
-- **주요 기능**:
-  - JSON 입력 및 파싱
-  - 룰 검증 요청 처리
-  - 검증 결과 시각화
-  - 리포트 생성 요청 처리
-  - 마크다운 리포트 렌더링
-- **주요 함수**:
-  - `validateRule()`: 룰 검증 요청 처리
-  - `generateReport()`: 리포트 생성 요청 처리
-  - `getSeverityText()`: 심각도 텍스트 변환
-  - `getIssueTypeText()`: 이슈 유형 텍스트 변환
-  - `renderMarkdown()`: 마크다운 HTML 변환
-- **상태 관리**:
-  - `validationResult`: 검증 결과 상태
-  - `reportResult`: 리포트 결과 상태
-  - `error`: 오류 상태
-  - `isLoading`: 로딩 상태
+## 🔄 API 엔드포인트
 
-#### 3. RuleEditor (RuleEditor.vue)
-- **역할**: 자연어 설명에서 룰 생성 화면 제공
-- **상태 관리**:
-  - `ruleDescription`: 자연어 설명
-  - `additionalContext`: 추가 컨텍스트
-  - `generatedRule`: 생성된 룰
-  - `generatedExplanation`: 룰 생성 설명
-- **주요 함수**:
-  - `generateRule()`: 룰 생성 API 호출 및 결과 처리
-  - `validateRule()`: 생성된 룰 검증 페이지로 이동
-
-## 🔄 주요 API 엔드포인트
-
-### 1. 룰 생성 API
-- **URL**: `/api/v1/rules/generate`
-- **Method**: POST
-- **Handler**: `rule_generator.py`의 `generate_rule()`
-- **요청 형식**: `RuleGenerationRequest`
-  ```json
-  {
-    "description": "텍스트 설명",
-    "additional_context": "추가 컨텍스트"
-  }
-  ```
-- **응답 형식**: `RuleGenerationResponse`
-  ```json
-  {
-    "rule": { Rule 객체 },
-    "explanation": "생성 설명"
-  }
-  ```
-
-### 2. 룰 검증 API
+### 1. 룰 검증 API
 - **URL**: `/api/v1/rules/validate-json`
-- **Method**: POST
-- **Handler**: `rule_validator.py`의 `validate_rule_json()`
-- **요청 형식**: `RuleJsonValidationRequest`
-  ```json
-  {
-    "rule_json": { 룰 JSON 객체 }
+- **메서드**: POST
+- **요청 형식**:
+```json
+{
+  "rule_json": {
+    "ruleId": "R123",
+    "name": "3회선 이상 할인",
+    "description": "무선 회선이 3개 이상인 고객에게 10% 할인 적용",
+    "conditions": {...},
+    "priority": 1,
+    "message": [...]
   }
-  ```
-- **응답 형식**: `RuleValidationResponse`
-  ```json
-  {
-    "validation_result": {
-      "is_valid": true/false,
-      "issues": [ { ValidationIssue 객체들 } ],
-      "summary": "요약 메시지"
-    },
-    "rule_summary": "룰 설명"
+}
+```
+- **응답 형식**:
+```json
+{
+  "is_valid": true,
+  "summary": "이 룰은 유효합니다.",
+  "issues": [...],
+  "issue_counts": {"duplicate_condition": 1, ...},
+  "structure": {
+    "depth": 3,
+    "condition_count": 5,
+    "unique_fields": ["MBL_ACT_MEM_PCNT", "ENTR_STUS_CD"]
   }
-  ```
-
-### 3. 룰 리포트 API
-- **URL**: `/api/v1/rules/report`
-- **Method**: POST
-- **Handler**: `rule_report.py`의 `generate_rule_report()`
-- **요청 형식**: `RuleReportRequest`
-  ```json
-  {
-    "rule_json": { 룰 JSON 객체 },
-    "include_markdown": true
-  }
-  ```
-- **응답 형식**: `RuleReportResponse`
-  ```json
-  {
-    "report": "마크다운 리포트",
-    "rule_id": "룰 ID",
-    "rule_name": "룰 이름"
-  }
-  ```
-
-## 🛠️ 데이터 모델
-
-### 백엔드 모델 (Pydantic)
-
-#### 1. Rule 모델 (rule.py)
-```python
-class RuleCondition(BaseModel):
-    field: str
-    operator: str
-    value: Any
-
-class RuleAction(BaseModel):
-    action_type: str
-    parameters: Dict[str, Any]
-
-class Rule(BaseModel):
-    id: Optional[str]
-    name: str
-    description: str
-    conditions: List[RuleCondition]
-    actions: List[RuleAction]
-    priority: int
-    enabled: bool
+}
 ```
 
-#### 2. ValidationResult 모델 (validation_result.py)
+### 2. 리포트 생성 API
+- **URL**: `/api/v1/rules/report`
+- **메서드**: POST
+- **요청 형식**:
+```json
+{
+  "rule_json": {
+    "ruleId": "R123",
+    "name": "3회선 이상 할인",
+    "description": "무선 회선이 3개 이상인 고객에게 10% 할인 적용",
+    "conditions": {...},
+    "priority": 1,
+    "message": [...]
+  },
+  "include_markdown": true
+}
+```
+- **응답 형식**:
+```json
+{
+  "report": "# 룰 분석 리포트\n\n## 개요\n\n이 룰은 ...",
+  "rule_id": "R123",
+  "rule_name": "3회선 이상 할인"
+}
+```
+
+## 📊 데이터 모델
+
+### Rule 모델 (rule.py)
 ```python
-class ValidationIssue(BaseModel):
-    message: str
+class RuleCondition(BaseModel):
+    field: Optional[str] = None
+    operator: str
+    value: Any = None
+    conditions: Optional[List['RuleCondition']] = None
+
+class Rule(BaseModel):
+    id: Optional[str] = None
+    name: str
+    description: Optional[str] = None
+    conditions: List[RuleCondition]
+    actions: Optional[List[Dict[str, Any]]] = None
+    priority: Optional[int] = None
+    enabled: Optional[bool] = True
+```
+
+### ValidationResult 모델 (validation_result.py)
+```python
+class ConditionIssue(BaseModel):
+    field: Optional[str] = None
+    issue_type: str
     severity: str
-    field: Optional[str]
+    location: str
+    explanation: str
+    suggestion: str
+
+class StructureInfo(BaseModel):
+    depth: int
+    condition_count: int
+    condition_node_count: int
+    field_condition_count: int
+    unique_fields: List[str]
 
 class ValidationResult(BaseModel):
     is_valid: bool
-    issues: List[ValidationIssue]
     summary: str
-    duplicate_issues: List[str]
-    invalid_operator_issues: List[str]
-    type_mismatch_issues: List[str]
-    contradiction_issues: List[str]
-    structure_complexity: int
+    issues: List[ConditionIssue]
+    issue_counts: Dict[str, int]
+    structure: StructureInfo
+    rule_summary: Optional[str] = None
+    complexity_score: Optional[float] = None
+    ai_comment: Optional[str] = None
 ```
 
-### 프론트엔드 모델 (TypeScript)
-
-#### 1. Rule 인터페이스 (rule.ts)
-```typescript
-interface RuleCondition {
-  field: string;
-  operator: string;
-  value: any;
-}
-
-interface RuleAction {
-  action_type: string;
-  parameters: Record<string, any>;
-}
-
-interface Rule {
-  id?: string;
-  name: string;
-  description: string;
-  conditions: RuleCondition[];
-  actions: RuleAction[];
-  priority: number;
-  enabled: boolean;
-}
+### RuleJsonValidationRequest 모델 (rule_json_validation_request.py)
+```python
+class RuleJsonValidationRequest(BaseModel):
+    rule_json: Dict[str, Any]
 ```
 
-#### 2. ValidationResult 인터페이스 (rule.ts)
-```typescript
-interface ValidationIssue {
-  severity: 'error' | 'warning' | 'info';
-  message: string;
-  location?: string;
-  suggestion?: string;
-}
+### Report 모델 (report.py)
+```python
+class RuleReportRequest(BaseModel):
+    rule_json: Dict[str, Any]
+    include_markdown: bool = True
+    validation_result: Optional[Dict[str, Any]] = None
 
-interface ValidationResult {
-  is_valid: boolean;
-  issues: ValidationIssue[];
-  summary: string;
-}
+class RuleReport(BaseModel):
+    report: str
+    rule_id: str
+    rule_name: str
 ```
 
-## 🔎 최적화 및 오류 처리
+## 🛠️ 개발 및 운영 가이드
 
-### 백엔드 최적화
-1. **비동기 처리**: FastAPI의 비동기 처리를 활용하여 OpenAI API 호출 시 성능 최적화
-2. **오류 처리**: LLM 호출, JSON 파싱, 검증 단계에서 오류 처리 및 상세 메시지 제공
-3. **환경 변수**: API 키 및 설정을 환경 변수로 관리하여 보안 강화
+### 개발 환경 설정
+- **Python**: 3.9 이상 필요
+- **Node.js**: 16.0 이상 필요
+- **개발 서버 실행**:
+  ```bash
+  # 백엔드
+  cd backend
+  uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+  
+  # 프론트엔드
+  cd frontend
+  npm install
+  npm run dev
+  ```
 
-### 프론트엔드 최적화
-1. **응답 캐싱**: 동일 요청에 대한 불필요한 서버 호출 최소화
-2. **국제화**: 영문 메시지를 한국어로 변환하는 함수 제공
-3. **마크다운 렌더링**: 마크다운 텍스트를 HTML로 변환하여 가독성 향상
-4. **JSON 검증**: 사용자 입력 JSON의 유효성 검증 및 중첩 구조 처리
+### API 키 설정
+1. 프로젝트 루트에 `.env` 파일 생성
+2. 다음 내용 추가:
+   ```
+   OPENAI_API_KEY=your_api_key_here
+   ```
 
-## 📊 성능 고려사항
+### 빌드 및 배포
+- **Docker 사용**:
+  ```bash
+  docker-compose up -d
+  ```
+- **수동 배포**:
+  ```bash
+  # 프론트엔드 빌드
+  cd frontend
+  npm run build
+  
+  # 백엔드 실행
+  cd backend
+  uvicorn app.main:app --host 0.0.0.0 --port 8000
+  ```
 
-### 응답 시간
-- LLM API 호출은 평균 2-5초의 지연 시간 발생
-- OpenAI 서버 부하에 따라 지연 시간 변화 가능
-- 타임아웃 설정으로 장시간 요청 방지
+### 로깅 설정
+- 로그 레벨: `/backend/app/config.py`에서 설정
+- 로그 파일: `/var/log/rule-ai-system/app.log`에 기록
+- 로그 포맷: JSON 포맷으로 구조화된 로깅 사용
 
-### 메모리 사용량
-- 대용량 JSON 처리 시 메모리 오버헤드 발생 가능
-- 복잡한 조건 트리 분석 시 재귀 호출 제한 고려
+## 🔍 성능 및 한계
 
-### API 요청 제한
-- OpenAI API 요청 제한(rate limit) 고려
-- 중요 요청 실패 시 재시도 로직 구현
+### 성능 지표
+- **응답 시간**:
+  - 룰 검증: 평균 0.5초 (복잡도에 따라 변동)
+  - 리포트 생성: 평균 5초 (OpenAI API 응답 시간에 의존)
+- **동시 처리 능력**: 기본 설정으로 최대 50 동시 요청
 
-## 📝 결론
-
-Rule AI System은 자연어 설명에서 비즈니스 룰을 생성하고, 룰의 논리적 일관성을 검증하며, 상세 분석 리포트를 생성하는 AI 기반 시스템입니다. 백엔드(FastAPI, Python)와 프론트엔드(Vue.js, TypeScript)로 구성되어 있으며, OpenAI API를 활용하여 자연어 처리 기능을 제공합니다.
-
-주요 기능:
-1. 자연어 설명에서 구조화된 룰 생성
-2. 룰의 논리적 일관성 검증
-3. 룰에 대한 상세 분석 리포트 생성
-
-이 시스템은 복잡한 비즈니스 규칙을 쉽게 생성하고 검증할 수 있게 하여 사용자의 업무 효율성을 높이고, 규칙 기반 시스템의 안정성을 향상시킵니다. 
+### 한계
+- **룰 크기**: 매우 큰 룰(1000개 이상의 조건)의 경우 성능 저하
+- **API 의존성**: OpenAI API 장애 시 리포트 생성 기능 사용 불가
+- **필드 인식**: 시스템에 등록되지 않은 필드는 타입 검증이 제한적
+- **모순 검출**: 복잡한 논리 구조에서는 일부 모순 검출 제한적 
