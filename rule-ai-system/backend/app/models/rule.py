@@ -2,10 +2,12 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 
 class RuleCondition(BaseModel):
-    """Rule condition model"""
-    field: str = Field(..., description="Field name to apply condition")
-    operator: str = Field(..., description="Condition operator (eq, gt, lt, etc)")
-    value: Any = Field(..., description="Value to compare")
+    """룰 조건 모델"""
+    field: str
+    operator: str
+    value: Any
+    conditions: Optional[List['RuleCondition']] = None
+    parent_operator: Optional[str] = None
 
 class RuleAction(BaseModel):
     """Rule action model"""
@@ -13,24 +15,17 @@ class RuleAction(BaseModel):
     parameters: Dict[str, Any] = Field(default_factory=dict, description="Action parameters")
 
 class Rule(BaseModel):
-    """Rule model with conditions and actions"""
+    """룰 모델"""
+    name: str
+    description: Optional[str] = None
+    conditions: List[RuleCondition]
+    action: Optional[Dict[str, Any]] = None
     id: Optional[str] = Field(None, description="Rule unique identifier")
-    name: str = Field(..., description="Rule name")
-    description: str = Field(..., description="Rule description in natural language")
-    conditions: List[RuleCondition] = Field(..., description="List of conditions")
-    actions: List[RuleAction] = Field(..., description="List of actions to perform if conditions are met")
     priority: int = Field(default=1, description="Rule execution priority (lower means higher priority)")
     enabled: bool = Field(default=True, description="Whether the rule is enabled or not")
     
     class Config:
         from_attributes = True
 
-class RuleGenerationRequest(BaseModel):
-    """Request model for rule generation"""
-    description: str = Field(..., description="Natural language description of the rule to generate")
-    additional_context: Optional[str] = Field(None, description="Additional context for rule generation")
-
-class RuleGenerationResponse(BaseModel):
-    """Response model for rule generation"""
-    rule: Rule = Field(..., description="Generated rule")
-    explanation: str = Field(..., description="Explanation of how the rule was generated") 
+# 순환 참조 해결
+RuleCondition.model_rebuild() 

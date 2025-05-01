@@ -9,12 +9,31 @@ class LLMService:
     
     def __init__(self):
         """Initialize LLM service with API key from settings"""
-        api_key = os.environ.get("OPENAI_API_KEY") or settings.OPENAI_API_KEY
-        print(f"LLM 서비스 초기화 - API 키 존재: {bool(api_key)}, 길이: {len(api_key if api_key else '')}")
-        # 키가 있을 경우에만 클라이언트 초기화
-        self.client = OpenAI(api_key=api_key) if api_key else None
-        self.model = os.environ.get("LLM_MODEL") or settings.LLM_MODEL
-        print(f"사용 모델: {self.model}")
+        try:
+            api_key = os.environ.get("OPENAI_API_KEY") or settings.OPENAI_API_KEY
+            if not api_key:
+                print("경고: OpenAI API 키가 설정되어 있지 않습니다. 대체 응답 모드로 작동합니다.")
+                self.client = None
+                self.model = None
+                self.fake_mode = True
+                return
+                
+            elif api_key.startswith("sk-your-") or api_key == "sk-your-valid-openai-api-key":
+                print("경고: 기본 OpenAI API 키가 변경되지 않았습니다. 대체 응답 모드로 작동합니다.")
+                self.client = None
+                self.model = None
+                self.fake_mode = True
+                return
+            
+            self.client = OpenAI(api_key=api_key)
+            self.model = os.environ.get("LLM_MODEL") or settings.LLM_MODEL
+            self.fake_mode = False
+            print(f"LLM 서비스 초기화 완료 - 사용 모델: {self.model}")
+        except Exception as e:
+            print(f"LLM 서비스 초기화 오류: {str(e)}. 대체 응답 모드로 작동합니다.")
+            self.client = None
+            self.model = None
+            self.fake_mode = True
     
     async def call_llm(self, prompt: str, system_message: str = None) -> str:
         """
@@ -27,32 +46,62 @@ class LLMService:
         Returns:
             LLM response as string
         """
-        api_key = os.environ.get("OPENAI_API_KEY") or settings.OPENAI_API_KEY
-        if not api_key or not self.client:
-            print("API 키가 없어 기본 오류 응답 사용")
-            return "API 키가 설정되어 있지 않습니다. 환경변수 또는 설정 파일에 API 키를 설정하세요."
-        
-        messages = []
-        if system_message:
-            messages.append({"role": "system", "content": system_message})
-        
-        messages.append({"role": "user", "content": prompt})
-        
+        # API 키가 없거나 대체 모드인 경우
+        if self.fake_mode:
+            return self._generate_fallback_response(prompt, system_message)
+            
         try:
-            print(f"OpenAI API 호출 중... 모델: {self.model}")
-            # API 호출
+            messages = []
+            
+            # 시스템 메시지 추가
+            if system_message:
+                messages.append({"role": "system", "content": system_message})
+                
+            # 사용자 프롬프트 추가
+            messages.append({"role": "user", "content": prompt})
+            
+            # ChatCompletion API 호출
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                temperature=0.2,
-                max_tokens=2000
+                temperature=0.1
             )
-            result = response.choices[0].message.content
-            print(f"OpenAI 응답 성공: {result[:50]}...")
-            return result
+            
+            # 응답 추출
+            content = response.choices[0].message.content
+            return content
+        
         except Exception as e:
-            print(f"LLM API 오류 상세: {str(e)}")
-            return f"API 호출 중 오류가 발생했습니다: {str(e)}"
+            print(f"LLM API 호출 오류: {str(e)}. 대체 응답을 생성합니다.")
+            return self._generate_fallback_response(prompt, system_message)
+    
+    def _generate_fallback_response(self, prompt: str, system_message: str = None) -> str:
+        """API 호출 실패 시 대체 응답 생성"""
+        print("대체 응답 생성 중...")
+        
+        # 프롬프트에 '리포트'가 포함되어 있는지 확인
+        if "리포트" in prompt.lower() or "report" in prompt.lower():
+            return """# 🔍 룰 분석 리포트
+
+## 📌 기본 정보
+- **상태**: API 키 미설정으로 인한 대체 리포트
+- **설명**: OpenAI API 키가 설정되지 않아 자동 생성된 대체 리포트입니다.
+
+## ⚠️ 설정 필요
+OpenAI API 키가 설정되어 있지 않거나 유효하지 않습니다. 다음 단계를 수행하세요:
+
+1. OpenAI API 키를 발급받으세요: https://platform.openai.com/account/api-keys
+2. 환경 변수 'OPENAI_API_KEY'에 발급받은 키를 설정하세요.
+3. 서버를 재시작하세요.
+
+## 📝 관리자 안내
+- 환경 변수로 API 키 설정: `export OPENAI_API_KEY=your-key-here`
+- 환경 파일(.env)에 API 키 설정: `OPENAI_API_KEY=your-key-here`
+
+정상적인 리포트 생성을 위해 API 키를 설정해주세요."""
+        
+        # 그 외 일반적인 요청인 경우
+        return "LLM 서비스를 사용할 수 없습니다. OpenAI API 키를 설정해주세요."
     
     async def generate_json(self, prompt: str, system_message: str = None) -> Dict[str, Any]:
         """
@@ -64,6 +113,10 @@ class LLMService:
             
         Returns:
             Generated JSON as dict
+            
+        Raises:
+            ValueError: If API key is not set
+            Exception: If API call fails or JSON parsing fails
         """
         if system_message is None:
             system_message = "You are a helpful assistant that generates valid JSON based on user requirements. Always respond with valid JSON only."
@@ -81,9 +134,4 @@ class LLMService:
             return json.loads(json_str)
         except json.JSONDecodeError as e:
             print(f"JSON 파싱 오류: {str(e)}, 응답: {response}")
-            # JSON 파싱 오류 시 기본 에러 응답 생성
-            return {
-                "error": "JSON 파싱 오류",
-                "message": f"LLM 응답을 JSON으로 파싱할 수 없습니다: {str(e)}",
-                "response": response[:200] + "..." if len(response) > 200 else response
-            } 
+            raise Exception(f"LLM 응답을 JSON으로 파싱할 수 없습니다: {str(e)}") 

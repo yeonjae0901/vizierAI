@@ -1,29 +1,44 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Literal, Set
 from pydantic import BaseModel, Field
 from app.models.rule import Rule
 
-class ValidationIssue(BaseModel):
-    """Validation issue model"""
-    severity: str = Field(..., description="Issue severity (error, warning, info)")
-    message: str = Field(..., description="Issue description")
-    location: Optional[str] = Field(None, description="Location of the issue in the rule")
-    suggestion: Optional[str] = Field(None, description="Suggestion to fix the issue")
+class ConditionIssue(BaseModel):
+    """룰 조건 이슈 모델"""
+    field: Optional[str] = None
+    issue_type: str
+    severity: str
+    location: str = ""
+    explanation: str = ""
+    suggestion: str = ""
+
+class StructureInfo(BaseModel):
+    """룰 구조 정보 모델"""
+    depth: int
+    condition_count: int = 0  # 이전 버전 호환성을 위해 유지
+    condition_node_count: int = Field(0, description="전체 조건 노드 수 (논리 연산자 포함)")
+    field_condition_count: int = Field(0, description="실제 필드가 있는 비교 조건 수")
+    unique_fields: List[str]
 
 class ValidationResult(BaseModel):
-    """Validation result model"""
-    valid: bool = Field(..., description="Whether the rule is valid or not")
-    issues: List[ValidationIssue] = Field(default_factory=list, description="List of validation issues")
-    summary: str = Field(..., description="Summary of validation results in natural language")
-    
-class RuleValidationRequest(BaseModel):
-    """Request model for rule validation"""
-    rule: Rule = Field(..., description="Rule to validate")
+    """룰 검증 결과 모델"""
+    is_valid: bool
+    summary: str
+    issue_counts: Dict[str, int] = Field(default_factory=dict)
+    issues: List[ConditionIssue]
+    structure: StructureInfo
+    rule_summary: str = ""
+    complexity_score: int = 0
+    ai_comment: Optional[str] = None
 
 class RuleJsonValidationRequest(BaseModel):
-    """Request model for rule validation using the original JSON format"""
-    rule_json: Dict[str, Any] = Field(..., description="Rule JSON to validate")
+    """Request model for rule validation from JSON"""
+    rule_json: Dict[str, Any]
 
 class RuleValidationResponse(BaseModel):
-    """Response model for rule validation"""
-    validation_result: ValidationResult = Field(..., description="Validation result")
-    rule_summary: str = Field(..., description="Natural language summary of the rule") 
+    """Rule validation response model"""
+    is_valid: bool
+    summary: str
+    issue_counts: Dict[str, int]
+    issues: List[ConditionIssue]
+    structure: StructureInfo 
+    ai_comment: Optional[str] = None 

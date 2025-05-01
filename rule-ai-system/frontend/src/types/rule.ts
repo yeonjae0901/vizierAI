@@ -19,34 +19,29 @@ export interface Rule {
   enabled: boolean;
 }
 
-export interface RuleGenerationRequest {
-  description: string;
-  additional_context?: string;
-}
-
-export interface RuleGenerationResponse {
-  rule: Rule;
-  explanation: string;
-}
-
 export interface ValidationIssue {
   severity: 'error' | 'warning' | 'info';
-  message: string;
+  message?: string;
+  explanation?: string;
   location?: string;
   suggestion?: string;
+  field?: string;
+  issue_type?: string;
 }
 
 export interface ValidationResult {
   is_valid: boolean;
-  issues: ValidationIssue[];
   summary: string;
+  issues: ValidationIssue[];
+  issue_counts?: Record<string, number>;
+  structure?: {
+    depth: number;
+    condition_count: number;
+    unique_fields: string[];
+  };
+  complexity_score?: number;
+  rule_summary?: string;
 }
-
-// 두 가지 형태의 요청을 모두 허용하는 유니온 타입
-export type RuleValidationRequest = 
-  | { rule: Rule } 
-  | { rule_json: Record<string, any> }
-  | Record<string, any>; // 호환성을 위한 추가 타입 (rule_json으로 처리됨)
 
 export interface RuleValidationResponse {
   validation_result: ValidationResult;

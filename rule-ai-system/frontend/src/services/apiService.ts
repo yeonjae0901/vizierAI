@@ -1,9 +1,6 @@
 import axios from 'axios';
 import type {
   Rule,
-  RuleGenerationRequest,
-  RuleGenerationResponse,
-  RuleValidationRequest,
   RuleValidationResponse,
   RuleReportRequest,
   RuleReportResponse
@@ -16,6 +13,29 @@ const apiClient = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+// 디버깅을 위한 인터셉터 추가
+apiClient.interceptors.request.use(
+  (config) => {
+    console.log('API 요청:', config.method, config.url, config.data);
+    return config;
+  },
+  (error) => {
+    console.error('API 요청 에러:', error);
+    return Promise.reject(error);
+  }
+);
+
+apiClient.interceptors.response.use(
+  (response) => {
+    console.log('API 응답:', response.status, response.data);
+    return response;
+  },
+  (error) => {
+    console.error('API 응답 에러:', error.response?.status, error.response?.data);
+    return Promise.reject(error);
+  }
+);
 
 // API 오류 핸들러
 const handleApiError = (error: any): never => {
@@ -37,35 +57,16 @@ const handleApiError = (error: any): never => {
 
 // API 서비스
 export default {
-  // 룰 생성 API
-  async generateRule(request: RuleGenerationRequest): Promise<RuleGenerationResponse> {
+  // 룰 검증 API
+  async validateRuleJson(ruleJson: any): Promise<RuleValidationResponse> {
     try {
-      const response = await apiClient.post<RuleGenerationResponse>('/api/v1/rules/generate', request);
+      console.log('validateRuleJson 요청:', ruleJson);
+      const formattedRequest = { rule_json: ruleJson };
+      const response = await apiClient.post<RuleValidationResponse>('/api/v1/rules/validate-json', formattedRequest);
+      console.log('validateRuleJson 응답:', response.data);
       return response.data;
     } catch (error) {
-      return handleApiError(error);
-    }
-  },
-  
-  // 룰 검증 API
-  async validateRule(request: RuleValidationRequest): Promise<RuleValidationResponse> {
-    try {
-      // 원래의 Rule 형식을 사용하는 경우
-      if ('rule' in request) {
-        const response = await apiClient.post<RuleValidationResponse>('/api/v1/rules/validate', request);
-        return response.data;
-      } 
-      // 원본 JSON 포맷을 사용하는 경우
-      else if ('rule_json' in request) {
-        const response = await apiClient.post<RuleValidationResponse>('/api/v1/rules/validate-json', request);
-        return response.data;
-      }
-      // 호환성을 위해 request가 rule을 포함하지 않는 경우
-      else {
-        const response = await apiClient.post<RuleValidationResponse>('/api/v1/rules/validate-json', { rule_json: request });
-        return response.data;
-      }
-    } catch (error) {
+      console.error('validateRuleJson 에러:', error);
       return handleApiError(error);
     }
   },
@@ -73,9 +74,22 @@ export default {
   // 룰 리포트 생성 API
   async generateRuleReport(request: RuleReportRequest): Promise<RuleReportResponse> {
     try {
+      console.log('generateRuleReport 요청:', request);
       const response = await apiClient.post<RuleReportResponse>('/api/v1/rules/report', request);
+      console.log('generateRuleReport 응답:', response.data);
       return response.data;
     } catch (error) {
+      console.error('generateRuleReport 에러:', error);
+      return handleApiError(error);
+    }
+  },
+
+  async post(url: string, data: any): Promise<any> {
+    try {
+      const response = await apiClient.post(url, data);
+      return response;
+    } catch (error) {
+      console.error('API 요청 에러:', error);
       return handleApiError(error);
     }
   }

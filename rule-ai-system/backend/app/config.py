@@ -17,8 +17,12 @@ class Settings(BaseSettings):
     # 개발 환경 설정
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
     
+    # 프론트엔드 설정 (선택 사항)
+    VITE_API_URL: str = os.getenv("VITE_API_URL", "http://localhost:8000")
+    
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"  # 추가 필드를 무시합니다
 
 settings = Settings() 

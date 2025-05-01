@@ -75,26 +75,37 @@ class RuleAnalyzer:
                 
             # 타입 불일치 사전 확인 - 전체 조건 순회
             try:
-                # 모든 타입 불일치 이슈 수집
-                type_mismatch_issues = self._precheck_type_mismatches(rule.conditions)
-                
-                # 타입 불일치 오류를 이슈 목록에 추가하고 계속 진행
-                if type_mismatch_issues:
-                    type_issues_count = len(type_mismatch_issues)
-                    print(f"타입 불일치 오류가 {type_issues_count}개 발견되었지만, 다른 검사도 계속 진행합니다.")
-                    self.issues.extend(type_mismatch_issues)
-                
+                self._precheck_type_mismatches(rule.conditions)
             except Exception as e:
                 print(f"타입 검사 중 오류: {str(e)}")
-                # 타입 검사 도중 예상치 못한 오류 발생 시 처리
-                self.issues.append(ConditionIssue(
-                    field=None,
-                    issue_type="analysis_error",
-                    severity="error",
-                    location="조건 구조",
-                    explanation=f"타입 검사 중 오류: {str(e)}",
-                    suggestion="조건의 형식과 값을 확인하세요."
-                ))
+                # 치명적인 타입 오류가 있을 경우 바로 처리
+                if "not supported between instances" in str(e):
+                    error_parts = str(e).split("not supported between instances of")
+                    if len(error_parts) > 1:
+                        type_info = error_parts[1].strip()
+                        return ValidationResult(
+                            is_valid=False,
+                            summary=f"룰 '{rule.name}'에 총 1가지 유형, 1건의 오류가 발견되었습니다.",
+                            issue_counts={"type_mismatch": 1},
+                            issues=[ConditionIssue(
+                                field=None,
+                                issue_type="type_mismatch",
+                                severity="error",
+                                location="조건 구조",
+                                explanation=f"타입 불일치: {type_info} 간에 비교 연산이 불가능합니다. 타입을 일치시켜주세요.",
+                                suggestion="조건에 사용된 값의 타입이 일치하는지 확인하세요. 숫자는 숫자끼리, 문자열은 문자열끼리 비교해야 합니다."
+                            )],
+                            structure=StructureInfo(
+                                depth=1,
+                                condition_count=len(rule.conditions),
+                                condition_node_count=len(rule.conditions),
+                                field_condition_count=0,
+                                unique_fields=[]
+                            ),
+                            rule_summary="타입 불일치 오류로 인해 분석이 중단되었습니다.",
+                            complexity_score=0,
+                            ai_comment="타입이 일치하지 않는 조건이 있습니다. 특히 문자열과 숫자를 비교할 수 없으므로 타입을 일치시키세요."
+                        )
             
             # 조건 검증
             for idx, condition in enumerate(rule.conditions):
@@ -1634,77 +1645,27 @@ class RuleAnalyzer:
         
         return " ".join(selected_comments)
 
-    def _precheck_type_mismatches(self, conditions: List[RuleCondition]) -> List[ConditionIssue]:
-        """타입 불일치를 검사하여 이슈 목록 반환 (이전: 예외 발생)"""
-        issues = []
-        
-        for i, condition in enumerate(conditions):
-            try:
-                # 필드 타입 확인
-                if condition.field:
-                    field_type = self._get_field_type(condition.field)
-                    location = f"조건 {self.condition_index_map.get(id(condition), i+1)}"
-                    
-                    # 숫자 타입 필드에 문자열 값을 사용하는 경우 - 더 엄격한 체크
-                    if field_type == "number" and not isinstance(condition.value, (int, float)):
-                        # 이전: raise TypeError
-                        # 현재: 이슈 추가
-                        field_desc = ""
-                        if condition.field in self.field_schema and "description" in self.field_schema[condition.field]:
-                            field_desc = f" ({self.field_schema[condition.field]['description']})"
-                        
-                        issues.append(ConditionIssue(
-                            field=condition.field,
-                            issue_type="type_mismatch",
-                            severity="error",
-                            location=location,
-                            explanation=f"타입 불일치: 숫자(int) 타입 필드 '{condition.field}'{field_desc}에 {type(condition.value).__name__} 타입 값이 사용되었습니다.",
-                            suggestion=f"조건에 사용된 값의 타입이 일치하는지 확인하세요. '{condition.field}' 필드는 숫자 타입이므로 숫자 값을 사용해야 합니다."
-                        ))
-                    
-                    # 문자열 타입 필드에 숫자 값을 사용하는 경우
-                    if field_type == "string" and isinstance(condition.value, (int, float)):
-                        # 이전: raise TypeError
-                        # 현재: 이슈 추가
-                        field_desc = ""
-                        if condition.field in self.field_schema and "description" in self.field_schema[condition.field]:
-                            field_desc = f" ({self.field_schema[condition.field]['description']})"
-                        
-                        issues.append(ConditionIssue(
-                            field=condition.field,
-                            issue_type="type_mismatch",
-                            severity="error",
-                            location=location,
-                            explanation=f"타입 불일치: 문자열(str) 타입 필드 '{condition.field}'{field_desc}에 숫자({type(condition.value).__name__}) 값 {condition.value}이 사용되었습니다.",
-                            suggestion=f"조건에 사용된 값의 타입이 일치하는지 확인하세요. '{condition.field}' 필드는 문자열 타입이므로 문자열 값을 사용해야 합니다."
-                        ))
-                    
-                    # 비교 연산자에 대한 추가 검사
-                    if condition.operator in [">", ">=", "<", "<="]:
-                        # 비교 연산자에 대한 타입 체크
-                        if field_type == "string":
-                            # 이전: raise TypeError
-                            # 현재: 이슈 추가
-                            field_desc = ""
-                            if condition.field in self.field_schema and "description" in self.field_schema[condition.field]:
-                                field_desc = f" ({self.field_schema[condition.field]['description']})"
-                            
-                            issues.append(ConditionIssue(
-                                field=condition.field,
-                                issue_type="invalid_operator",
-                                severity="error",
-                                location=location,
-                                explanation=f"비교 연산자 '{condition.operator}'는 문자열 타입 필드 '{condition.field}'{field_desc}에 사용할 수 없습니다.",
-                                suggestion=f"문자열 필드에는 '==', '!=', 'contains' 등의 연산자를 사용하세요. 비교 연산자(>, <, >=, <=)는 숫자 타입에만 사용 가능합니다."
-                            ))
-            except Exception as e:
-                print(f"타입 검사 중 예외 발생 ({condition.field if hasattr(condition, 'field') else 'unknown'}): {str(e)}")
-                # 예외는 무시하고 계속 진행 (다른 조건 검사를 위해)
-                pass
+    def _precheck_type_mismatches(self, conditions: List[RuleCondition]) -> None:
+        """타입 불일치를 사전에 검사하여 크리티컬한 타입 오류를 미리 감지"""
+        for condition in conditions:
+            # 필드 타입 확인
+            if condition.field:
+                field_type = self._get_field_type(condition.field)
+                
+                # 숫자 타입 필드에 문자열 값을 사용하는 경우 - 더 엄격한 체크
+                if field_type == "number" and not isinstance(condition.value, (int, float)):
+                    raise TypeError(f"'>=' not supported between instances of 'int' and '{type(condition.value).__name__}'")
+                
+                # 문자열 타입 필드에 숫자 값을 사용하는 경우
+                if field_type == "string" and isinstance(condition.value, (int, float)):
+                    raise TypeError(f"'>=' not supported between instances of 'str' and '{type(condition.value).__name__}'")
+                
+                # 비교 연산자에 대한 추가 검사
+                if condition.operator in [">", ">=", "<", "<="]:
+                    # 비교 연산자에 대한 타입 체크
+                    if field_type == "string":
+                        raise TypeError(f"비교 연산자 '{condition.operator}'는 문자열 타입 필드 '{condition.field}'에 사용할 수 없습니다.")
             
             # 중첩 조건이 있는 경우 재귀적으로 검사
             if condition.conditions:
-                nested_issues = self._precheck_type_mismatches(condition.conditions)
-                issues.extend(nested_issues)
-                
-        return issues
+                self._precheck_type_mismatches(condition.conditions)

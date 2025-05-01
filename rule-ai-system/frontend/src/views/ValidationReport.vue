@@ -4,7 +4,7 @@
     <p class="description">기존 룰의 논리적 오류를 검증하고 상세 리포트를 생성합니다.</p>
     
     <div class="card">
-      <form @submit.prevent="generateReport">
+      <form @submit.prevent="validateRule">
         <div class="form-group">
           <label for="rule-json">룰 JSON:</label>
           <textarea
@@ -18,8 +18,11 @@
         </div>
         
         <div class="form-actions">
-          <button type="submit" class="btn btn-primary" :disabled="isLoading">
-            {{ isLoading ? '처리 중...' : '룰 리포트 생성하기' }}
+          <button type="button" class="btn btn-primary" @click="validateRule" :disabled="isLoading">
+            {{ isLoading ? '처리 중...' : '룰 검증하기' }}
+          </button>
+          <button type="button" class="btn btn-secondary" @click="generateReport" :disabled="!validationResult || isGeneratingReport">
+            {{ isGeneratingReport ? '처리 중...' : '리포트 생성하기' }}
           </button>
         </div>
       </form>
@@ -43,9 +46,22 @@
         <p>{{ validationResult.summary }}</p>
       </div>
       
-      <div v-if="ruleSummary" class="rule-summary">
-        <h4>룰 설명:</h4>
-        <p>{{ ruleSummary }}</p>
+      <div v-if="validationResult.structure" class="rule-structure">
+        <h4>룰 구조:</h4>
+        <ul>
+          <li>조건 깊이: {{ validationResult.structure.depth }}</li>
+          <li>조건 개수: {{ validationResult.structure.condition_count }}</li>
+          <li>사용된 필드: {{ validationResult.structure.unique_fields.join(', ') }}</li>
+        </ul>
+      </div>
+      
+      <div v-if="validationResult.issue_counts" class="issue-counts">
+        <h4>이슈 요약:</h4>
+        <ul>
+          <li v-for="(count, type) in validationResult.issue_counts" :key="type">
+            {{ getIssueTypeText(type) }}: {{ count }}개
+          </li>
+        </ul>
       </div>
       
       <div v-if="validationResult.issues && validationResult.issues.length > 0" class="issues">
@@ -54,13 +70,18 @@
           <li v-for="(issue, index) in validationResult.issues" :key="index" class="issue-item" :class="issue.severity">
             <div class="issue-header">
               <span class="issue-badge" :class="issue.severity">{{ getSeverityText(issue.severity) }}</span>
-              <span class="issue-message">{{ issue.message }}</span>
+              <span v-if="issue.field" class="issue-field">{{ issue.field }}</span>
+              <span v-if="issue.issue_type" class="issue-type">{{ getIssueTypeText(issue.issue_type) }}</span>
+              <span v-if="issue.message" class="issue-message">{{ issue.message }}</span>
             </div>
             <div v-if="issue.location" class="issue-location">
               위치: {{ issue.location }}
             </div>
+            <div v-if="issue.explanation" class="issue-explanation">
+              {{ issue.explanation }}
+            </div>
             <div v-if="issue.suggestion" class="issue-suggestion">
-              제안: {{ issue.suggestion }}
+              {{ issue.suggestion }}
             </div>
           </li>
         </ul>
@@ -89,11 +110,13 @@ export default defineComponent({
   setup() {
     const ruleJson = ref('')
     const isLoading = ref(false)
+    const isGeneratingReport = ref(false)
     const error = ref<string | null>(null)
     const validationResult = ref<ValidationResult | null>(null)
     const ruleSummary = ref<string | null>(null)
     const reportResult = ref<{ report: string, rule_id?: string, rule_name?: string } | null>(null)
     const formattedReport = ref<string>('')
+    const originalJsonData = ref<any>(null)
     
     // severity 값을 한국어로 변환하는 함수
     const getSeverityText = (severity: string): string => {
@@ -106,6 +129,28 @@ export default defineComponent({
           return '정보';
         default:
           return severity;
+      }
+    }
+    
+    // 이슈 타입을 한국어로 변환하는 함수
+    const getIssueTypeText = (issueType: string | undefined): string => {
+      if (!issueType) return '';
+      
+      switch (issueType) {
+        case 'duplicate_condition':
+          return '중복 조건';
+        case 'invalid_operator':
+          return '잘못된 연산자';
+        case 'contradiction':
+          return '모순 조건';
+        case 'type_mismatch':
+          return '타입 불일치';
+        case 'nested_redundancy':
+          return '중첩 중복';
+        case 'empty_group':
+          return '빈 그룹';
+        default:
+          return issueType;
       }
     }
     
@@ -166,123 +211,166 @@ export default defineComponent({
     
     // 마크다운 텍스트를 HTML로 변환하는 함수
     const renderMarkdown = (text: string): string => {
-      // 이모지 파싱
-      const textWithEmojis = parseEmojis(text)
-      
-      // 마크다운을 HTML로 변환
-      return marked.parse(textWithEmojis)
+      try {
+        // 이모지 파싱
+        const textWithEmojis = parseEmojis(text)
+        
+        // 마크다운을 HTML로 변환
+        const renderedHtml = marked.parse(textWithEmojis)
+        console.log('렌더링된 HTML 결과 (일부):', renderedHtml.substring(0, 200))
+        return renderedHtml
+      } catch (error) {
+        console.error('마크다운 렌더링 오류:', error)
+        return `<p style="color: red;">보고서 형식 오류: ${error}</p><pre>${text}</pre>`
+      }
     }
     
-    const generateReport = async () => {
+    const validateRule = async () => {
       if (jsonError.value) return
       
       error.value = null
       isLoading.value = true
-      reportResult.value = null
       validationResult.value = null
       ruleSummary.value = null
-      formattedReport.value = ''
       
       try {
         // JSON을 파싱
         const parsedData = JSON.parse(ruleJson.value)
         console.log('파싱된 룰 JSON:', parsedData);
         
-        // rule_json이 이미 있는지 확인하고 적절한 요청 객체 생성
-        const ruleData = parsedData.rule_json ? parsedData.rule_json : parsedData;
-        const validationRequest = { rule_json: ruleData };
-        console.log('검증 요청:', validationRequest);
+        // 백업: 원본 JSON 데이터 저장
+        originalJsonData.value = parsedData;
         
-        const validationResponse = await apiService.validateRule(validationRequest);
-        console.log('검증 응답:', validationResponse);
+        // rule_json이 있는지 확인하고 적절한 요청 객체 생성
+        const requestData = parsedData.rule_json ? parsedData : { rule_json: parsedData };
         
-        // 영문 메시지를 한국어로 변환
-        if (validationResponse.validation_result) {
-          translateValidationResult(validationResponse.validation_result);
-        }
+        // 직접 API 호출
+        const response = await apiService.post('/api/v1/rules/validate-json', requestData);
+        console.log('검증 응답:', response.data);
         
-        validationResult.value = validationResponse.validation_result;
-        ruleSummary.value = validationResponse.rule_summary;
-        
-        // 그 다음 상세 리포트 생성
-        console.log('리포트 생성 API 호출 시작');
-        const reportRequest = { 
-          rule_json: ruleData,
-          include_markdown: true
-        };
-        console.log('리포트 요청:', reportRequest);
-        
-        const reportResponse = await apiService.generateRuleReport(reportRequest);
-        console.log('리포트 응답:', reportResponse);
-        
-        reportResult.value = {
-          report: reportResponse.report,
-          rule_id: reportResponse.rule_id,
-          rule_name: reportResponse.rule_name
-        };
-        
-        // 마크다운 렌더링
-        if (reportResponse.report) {
-          console.log('마크다운 렌더링 시작');
-          formattedReport.value = renderMarkdown(reportResponse.report);
-          console.log('마크다운 렌더링 완료');
-        }
+        // 응답 데이터를 저장
+        validationResult.value = response.data;
       } catch (err: any) {
-        console.error('생성 오류:', err);
+        console.error('검증 오류:', err);
         error.value = err.message || '처리 중 오류가 발생했습니다.';
       } finally {
         isLoading.value = false;
       }
     }
     
-    // 영문 메시지를 한국어로 변환하는 함수
-    const translateValidationResult = (result: ValidationResult): void => {
-      if (result.issues && result.issues.length > 0) {
-        result.issues.forEach(issue => {
-          // 오류 메시지 번역
-          if (issue.message.includes('Duplicate condition')) {
-            issue.message = issue.message.replace('Duplicate condition', '중복 조건');
-          } else if (issue.message.includes('Invalid operator')) {
-            issue.message = issue.message.replace('Invalid operator', '잘못된 연산자');
-            issue.message = issue.message.replace('used for', '사용됨 (필드:');
-            issue.message = issue.message.replace('Use only', '다음만 사용 가능:');
-          } else if (issue.message.includes('Contradiction')) {
-            issue.message = issue.message.replace('Contradiction', '모순 조건');
-            issue.message = issue.message.replace('cannot be both', '값이 동시에 다음일 수 없음:');
-            issue.message = issue.message.replace('and', '그리고');
-          } else if (issue.message.includes('Self-contradiction')) {
-            issue.message = issue.message.replace('Self-contradiction', '자가 모순');
-            issue.message = issue.message.replace('has both equality and inequality for same value', '동일한 값에 대해 같음과 같지 않음 조건이 동시에 존재');
-          }
-          
-          // 위치 번역
-          if (issue.location) {
-            issue.location = issue.location.replace('condition', '조건');
-            issue.location = issue.location.replace('at index', '인덱스 위치');
-          }
-          
-          // 제안 번역
-          if (issue.suggestion) {
-            issue.suggestion = issue.suggestion.replace('Consider', '다음을 고려하세요:');
-            issue.suggestion = issue.suggestion.replace('Remove', '제거하세요:');
-            issue.suggestion = issue.suggestion.replace('one of the contradicting conditions', '모순된 조건 중 하나를');
-          }
-        });
-      }
+    const generateReport = async () => {
+      if (!validationResult.value) return
       
-      // 요약 메시지가 비어있는 경우 기본 메시지 설정
-      if (!result.summary || result.summary === '') {
-        if (result.is_valid) {
-          result.summary = '룰이 모든 검증을 통과했습니다.';
+      error.value = null
+      isGeneratingReport.value = true
+      reportResult.value = null
+      formattedReport.value = ''
+      
+      try {
+        console.log('====== 리포트 생성 API 호출 시작 ======');
+        
+        // 원본 JSON 데이터 가져오기 - 중요한 부분을 로그로 확인
+        const originalRuleText = ruleJson.value;
+        console.log('원본 룰 JSON 텍스트(일부):', originalRuleText.substring(0, 200));
+        
+        // JSON 파싱
+        const parsedData = JSON.parse(originalRuleText);
+        console.log('파싱된 데이터 구조(타입):', Object.prototype.toString.call(parsedData));
+        console.log('파싱된 데이터 최상위 키:', Object.keys(parsedData));
+        
+        // rule_json이 있는지 확인
+        const hasRuleJson = 'rule_json' in parsedData;
+        console.log('rule_json 키 존재 여부:', hasRuleJson);
+        
+        // 실제 룰 데이터 추출
+        const actualRuleData = hasRuleJson ? parsedData.rule_json : parsedData;
+        console.log('실제 룰 데이터 키:', Object.keys(actualRuleData));
+        
+        // 조건 구조 검사
+        if (actualRuleData.conditions) {
+          const conditionsType = Object.prototype.toString.call(actualRuleData.conditions);
+          console.log('조건 데이터 타입:', conditionsType);
+          
+          if (conditionsType === '[object Object]') {
+            console.log('조건 객체 구조:', JSON.stringify(actualRuleData.conditions).substring(0, 200));
+          } else if (conditionsType === '[object Array]') {
+            console.log('조건 배열 길이:', actualRuleData.conditions.length);
+          }
         } else {
-          result.summary = `룰에서 ${result.issues.length}개의 문제가 발견되었습니다.`;
+          console.log('조건 데이터 없음');
         }
+        
+        // 필수 필드가 없는 경우 기본값 추가
+        const preparedData = {
+          name: actualRuleData.name || 'Unnamed Rule',
+          description: actualRuleData.description || '',
+          id: actualRuleData.id || actualRuleData.ruleId || 'R000',
+          priority: actualRuleData.priority || 1,
+          enabled: actualRuleData.enabled !== undefined ? actualRuleData.enabled : true,
+          action: actualRuleData.action || {},
+          conditions: [] // 기본값으로 빈 배열 설정
+        };
+        
+        // 조건 데이터 특수 처리
+        if (actualRuleData.conditions) {
+          const conditionsType = Object.prototype.toString.call(actualRuleData.conditions);
+          
+          if (conditionsType === '[object Object]') {
+            // 객체 형태의 조건 처리 (앵커 패턴)
+            console.log('앵커 패턴 조건 구조 처리');
+            preparedData.conditions = actualRuleData.conditions;
+          } else if (conditionsType === '[object Array]') {
+            // 배열 형태의 조건 처리
+            console.log('배열 형태 조건 처리');
+            preparedData.conditions = actualRuleData.conditions;
+          } else {
+            console.warn('조건 타입 불일치, 빈 배열로 대체');
+            preparedData.conditions = [];
+          }
+        } else {
+          console.warn('조건 데이터 없음, 빈 배열로 설정');
+          preparedData.conditions = [];
+        }
+        
+        console.log('전처리된 데이터(일부):', JSON.stringify(preparedData).substring(0, 200));
+        
+        // 원본 룰 데이터 전송
+        const requestData = { rule_json: preparedData };
+        console.log('리포트 API 요청 데이터(일부):', JSON.stringify(requestData).substring(0, 200));
+        
+        const response = await apiService.post('/api/v1/rules/report', requestData);
+        console.log('리포트 응답 상태:', response.status);
+        console.log('리포트 응답 데이터:', response.data);
+        
+        if (response.data && response.data.report) {
+          reportResult.value = {
+            report: response.data.report,
+            rule_id: response.data.rule_id || 'Unknown',
+            rule_name: response.data.rule_name || 'Unnamed Rule'
+          };
+          
+          // 마크다운 렌더링
+          console.log('마크다운 렌더링 시작');
+          console.log('원본 마크다운(일부):', response.data.report.substring(0, 200));
+          formattedReport.value = renderMarkdown(response.data.report);
+          console.log('마크다운 렌더링 완료');
+        } else {
+          error.value = '리포트 데이터가 없거나 잘못된 형식입니다';
+          console.error('잘못된 리포트 응답:', response.data);
+        }
+      } catch (err: any) {
+        console.error('리포트 생성 오류:', err);
+        error.value = err.message || '리포트 생성 중 오류가 발생했습니다.';
+      } finally {
+        isGeneratingReport.value = false;
+        console.log('====== 리포트 생성 종료 ======');
       }
     }
     
     return {
       ruleJson,
       isLoading,
+      isGeneratingReport,
       error,
       jsonError,
       validationResult,
@@ -290,7 +378,9 @@ export default defineComponent({
       reportResult,
       formattedReport,
       getSeverityText,
+      getIssueTypeText,
       getKoreanRuleName,
+      validateRule,
       generateReport
     }
   }
@@ -384,7 +474,7 @@ label {
   color: #b91c1c;
 }
 
-.summary, .rule-summary {
+.summary, .rule-summary, .rule-structure, .issue-counts {
   margin-bottom: 1.5rem;
   line-height: 1.6;
   padding: 1rem;
@@ -392,7 +482,7 @@ label {
   border-radius: 0.5rem;
 }
 
-.summary h4, .rule-summary h4 {
+.summary h4, .rule-summary h4, .rule-structure h4, .issue-counts h4 {
   margin-bottom: 0.5rem;
   font-size: 1.1rem;
   color: #1f2937;
@@ -460,11 +550,29 @@ label {
   color: white;
 }
 
-.issue-message {
-  font-weight: 500;
+.issue-field {
+  font-weight: 600;
+  margin-right: 0.5rem;
 }
 
-.issue-location, .issue-suggestion {
+.issue-type {
+  font-size: 0.8rem;
+  background-color: #f3f4f6;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.3rem;
+  color: #4b5563;
+}
+
+.issue-location {
+  font-size: 0.875rem;
+  margin-bottom: 0.5rem;
+  color: #4b5563;
+  background-color: rgba(255, 255, 255, 0.5);
+  padding: 0.3rem 0.5rem;
+  border-radius: 0.3rem;
+}
+
+.issue-explanation, .issue-suggestion {
   font-size: 0.875rem;
   margin-top: 0.5rem;
   background-color: rgba(255, 255, 255, 0.5);
@@ -684,6 +792,29 @@ label {
   cursor: not-allowed;
 }
 
+.btn-secondary {
+  background-color: #6b7280;
+  color: white;
+  border: none;
+  padding: 0.6rem 1.2rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  margin-left: 0.5rem;
+}
+
+.btn-secondary:hover {
+  background-color: #4b5563;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.btn-secondary:disabled {
+  background-color: #d1d5db;
+  cursor: not-allowed;
+}
+
 textarea {
   width: 100%;
   padding: 0.75rem;
@@ -705,5 +836,10 @@ textarea:focus {
   color: #dc2626;
   font-size: 0.875rem;
   margin-top: 0.5rem;
+}
+
+.issue-message {
+  font-weight: 500;
+  margin-left: 0.5rem;
 }
 </style> 
